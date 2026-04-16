@@ -4,6 +4,21 @@
 
 This repository contains the **backend API**, built with [NestJS](https://nestjs.com/), [TypeORM](https://typeorm.io/) and PostgreSQL.
 
+> **Operators / new teams — start here:**
+> - [`RUNBOOK.md`](./RUNBOOK.md) — deploy, migrate, rollback, health verification
+> - [`.env.example`](./.env.example) — every environment variable, annotated
+> - `GET /api-docs` once the app is running — interactive OpenAPI 3.0 browser
+> - `GET /api-docs-json` — raw OpenAPI spec for codegen / Postman import
+> - `GET /healthz` — readiness probe (DB ping, throttle-exempt)
+> - `GET /metrics` — Prometheus scrape (unauthenticated, gate at ingress)
+>
+> **Deployment model — note**: the sections below describe the developer
+> inner-loop. Production uses `migration:run` / `migration:run:prod`, **not**
+> `synchronize`. Production boot is gated by `validationSchema` (refuses `*`
+> CORS, default `DB_PASSWORD`, missing `APP_BASE_URL`, short `JWT_SECRET`).
+> Destructive seed requires `SEED_CONFIRM_DROP=yes` and `NODE_ENV != production`.
+> Full operational detail is in `RUNBOOK.md`.
+
 ---
 
 ## Table of Contents
