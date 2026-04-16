@@ -1,7 +1,7 @@
 import {
   Injectable,
-  BadRequestException,
   UnauthorizedException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -20,19 +20,26 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
+  /**
+   * Bootstrap-only endpoint.
+   *
+   * Before this change /auth/register was effectively public — anyone who
+   * knew a storeId could create an account in any role (including OWNER).
+   * We now reject the call unless the target store has zero users, i.e.
+   * only the very first user of a fresh store can be created this way.
+   * Subsequent users must be created via POST /users by an OWNER/MANAGER
+   * (which is already guarded by JWT + RolesGuard).
+   */
   async register(registerDto: RegisterDto): Promise<{ access_token: string; user: any }> {
     const { username, password, fullName, storeId, role } = registerDto;
 
-    // Check if user already exists within this store
-    const existingUser = await this.usersRepository.findOne({
-      where: {
-        username,
-        storeId,
-      },
+    const storeUserCount = await this.usersRepository.count({
+      where: { storeId },
     });
-
-    if (existingUser) {
-      throw new BadRequestException('User already exists in this store');
+    if (storeUserCount > 0) {
+      throw new ForbiddenException(
+        'Registration is closed for this store. Ask an OWNER or MANAGER to create the account via /users.',
+      );
     }
 
     // Hash password

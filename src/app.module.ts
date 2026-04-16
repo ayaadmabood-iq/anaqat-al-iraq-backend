@@ -1,9 +1,12 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import configuration from '@/config/configuration';
 import { validationSchema } from '@/config/validation.schema';
 import { buildDatabaseConfig } from '@/config/database.config';
+import type { AppConfig } from '@/config/configuration';
 import {
   Store,
   User,
@@ -23,6 +26,7 @@ import { UsersModule } from '@/modules/users/users.module';
 import { StoreModule } from '@/modules/store/store.module';
 import { InventoryModule } from '@/modules/inventory/inventory.module';
 import { SalesModule } from '@/modules/sales/sales.module';
+import { HealthModule } from '@/modules/health/health.module';
 
 const entities = [
   Store,
@@ -55,11 +59,21 @@ const entities = [
         buildDatabaseConfig(config, entities),
     }),
     TypeOrmModule.forFeature(entities),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const t = config.get<AppConfig['throttle']>('throttle');
+        return [{ ttl: (t?.ttlSeconds ?? 60) * 1000, limit: t?.limit ?? 120 }];
+      },
+    }),
     AuthModule,
     UsersModule,
     StoreModule,
     InventoryModule,
     SalesModule,
+    HealthModule,
   ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

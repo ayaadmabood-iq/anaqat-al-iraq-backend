@@ -56,7 +56,8 @@ describe('App e2e — post-hardening regression suite', () => {
         transform: true,
       }),
     );
-    app.setGlobalPrefix('api/v1');
+    // Match main.ts: /healthz is exempt from the /api/v1 prefix.
+    app.setGlobalPrefix('api/v1', { exclude: ['healthz'] });
 
     await app.init();
 
@@ -302,6 +303,42 @@ describe('App e2e — post-hardening regression suite', () => {
         isAdmin: true,
       })
       .expect(400);
+  });
+
+  /**
+   * Deployment contract — /healthz is the readiness probe for orchestrators.
+   * Must: (a) be reachable without the /api/v1 prefix,
+   *       (b) be unauthenticated,
+   *       (c) return 200 + DB status when the DB is up.
+   */
+  it('GET /healthz reports DB up and bypasses the global prefix', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/healthz')
+      .expect(200);
+    expect(res.body.status).toBe('ok');
+    expect(res.body.db).toBe('up');
+    expect(typeof res.body.uptimeSeconds).toBe('number');
+
+    // Must NOT be accessible under the global prefix.
+    await request(app.getHttpServer()).get('/api/v1/healthz').expect(404);
+  });
+
+  /**
+   * Security contract — /auth/register is bootstrap-only.
+   * Our test store already has `owner` and `sales` users (seeded in
+   * beforeAll), so the gate must reject the call with 403.
+   */
+  it('POST /auth/register returns 403 when the store already has users', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({
+        username: 'squatter',
+        password: 'demo123',
+        fullName: 'Squatter',
+        storeId,
+        role: 'OWNER',
+      })
+      .expect(403);
   });
 
   /**
