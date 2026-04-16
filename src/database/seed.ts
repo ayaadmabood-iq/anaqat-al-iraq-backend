@@ -22,7 +22,51 @@ import {
 // Load environment variables
 dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
 
+/**
+ * Refuses to run under any configuration that could plausibly be production.
+ *
+ * The seed calls `dataSource.dropDatabase()` which drops every schema on the
+ * target DB. A misplaced DATABASE_URL on an operator's laptop is enough to
+ * wipe real customer data without this guard. Two independent conditions
+ * must both be satisfied:
+ *
+ *   1. NODE_ENV must not be 'production'.
+ *   2. SEED_CONFIRM_DROP=yes must be set explicitly in the caller's env.
+ *
+ * The DB name is logged on refusal so the operator sees exactly what would
+ * have been destroyed.
+ */
+function assertSafeToDrop(): void {
+  const target = process.env.DB_DATABASE || 'anaqat_iraq';
+  const env = process.env.NODE_ENV || 'development';
+
+  if (env === 'production') {
+    console.error(
+      `[seed] REFUSED: NODE_ENV=production. This script drops and recreates ` +
+        `the schema on "${target}". Production data loss is prevented by design.`,
+    );
+    process.exit(2);
+  }
+
+  if (process.env.SEED_CONFIRM_DROP !== 'yes') {
+    console.error(
+      `[seed] REFUSED: destructive operation (DROP + CREATE) on "${target}" ` +
+        `requires SEED_CONFIRM_DROP=yes.\n` +
+        `Re-run with:\n` +
+        `  SEED_CONFIRM_DROP=yes DB_DATABASE=${target} npm run seed`,
+    );
+    process.exit(2);
+  }
+
+  console.warn(
+    `[seed] Confirmed destructive operation on database "${target}" ` +
+      `(NODE_ENV=${env}).`,
+  );
+}
+
 async function seed() {
+  assertSafeToDrop();
+
   const dataSource = new DataSource({
     type: 'postgres',
     host: process.env.DB_HOST || 'localhost',

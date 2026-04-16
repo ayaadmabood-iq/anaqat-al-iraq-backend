@@ -27,6 +27,7 @@ import { StoreModule } from '@/modules/store/store.module';
 import { InventoryModule } from '@/modules/inventory/inventory.module';
 import { SalesModule } from '@/modules/sales/sales.module';
 import { HealthModule } from '@/modules/health/health.module';
+import { ObservabilityModule } from '@/modules/observability/observability.module';
 
 const entities = [
   Store,
@@ -52,6 +53,8 @@ const entities = [
       validationOptions: { abortEarly: false, allowUnknown: true },
       envFilePath: ['.env'],
     }),
+    // Logger comes first so downstream modules can inject PinoLogger.
+    ObservabilityModule,
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

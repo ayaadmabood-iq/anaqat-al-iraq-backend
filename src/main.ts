@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
 import * as express from 'express';
 import * as path from 'path';
@@ -9,14 +10,14 @@ import { AppModule } from './app.module';
 import type { AppConfig } from './config/configuration';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
-    logger:
-      process.env.NODE_ENV === 'production'
-        ? ['error', 'warn', 'log']
-        : ['error', 'warn', 'log', 'debug', 'verbose'],
-  });
+  // bufferLogs: true defers log emission until the pino logger is wired.
+  // Without this, the first Nest logs use the default console logger and
+  // bypass pino entirely, so early boot messages would not be structured.
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  app.useLogger(app.get(Logger));
+
   const config = app.get(ConfigService);
-  const logger = new Logger('Bootstrap');
+  const logger = app.get(Logger);
 
   const nodeEnv = config.get<AppConfig['nodeEnv']>('nodeEnv') as string;
   const bodyLimit = config.get<AppConfig['bodyLimit']>('bodyLimit') as string;
@@ -24,12 +25,10 @@ async function bootstrap() {
     'corsOrigins',
   ) as string[];
 
-  // Security middleware
   app.use(helmet());
   app.use(express.json({ limit: bodyLimit }));
   app.use(express.urlencoded({ extended: true, limit: bodyLimit }));
 
-  // Uploads directory
   const uploadDirRaw = config.get<string>('uploadDir') as string;
   const uploadsDir = path.isAbsolute(uploadDirRaw)
     ? uploadDirRaw
@@ -42,8 +41,7 @@ async function bootstrap() {
    * CORS policy:
    *  - production: explicit allow-list (validationSchema already blocked '*')
    *  - dev / test: permissive '*', no credentials
-   * Never combine origin:'*' with credentials:true — browsers reject it, and
-   * it would expose session cookies to arbitrary origins.
+   * Never combine origin:'*' with credentials:true.
    */
   const isWildcard = corsOrigins.length === 1 && corsOrigins[0] === '*';
   app.enableCors({
@@ -51,7 +49,7 @@ async function bootstrap() {
     credentials: !isWildcard,
   });
 
-  app.setGlobalPrefix('api/v1', { exclude: ['healthz'] });
+  app.setGlobalPrefix('api/v1', { exclude: ['healthz', 'metrics'] });
 
   const expressInstance = app.getHttpAdapter().getInstance();
   expressInstance.use('/uploads', express.static(uploadsDir));
@@ -64,23 +62,38 @@ async function bootstrap() {
     }),
   );
 
+  /**
+   * Graceful shutdown:
+   * enableShutdownHooks() wires SIGTERM / SIGINT to Nest's lifecycle.
+   * Nest will then:
+   *   1. reject new HTTP connections,
+   *   2. invoke every module's onApplicationShutdown (incl. LifecycleService
+   *      which emits a structured log line + TypeOrmCoreModule which calls
+   *      DataSource.destroy to drain the PG pool),
+   *   3. close the HTTP server,
+   *   4. let the process exit naturally.
+   * Without this, a SIGTERM from an orchestrator (Kubernetes / systemd)
+   * would kill the process mid-request and leave Postgres connections open.
+   */
+  app.enableShutdownHooks();
+
   const port = config.get<AppConfig['port']>('port') as number;
   await app.listen(port);
 
-  logger.log(`Environment: ${nodeEnv}`);
-  logger.log(`Listening on :${port}`);
-  logger.log(
-    `CORS: ${isWildcard ? 'wildcard (dev)' : corsOrigins.join(', ')}`,
-  );
-  logger.log(`Body limit: ${bodyLimit}`);
-  logger.log(`Uploads: ${uploadsDir}`);
-  logger.log('Health: /healthz');
+  logger.log({
+    event: 'listening',
+    environment: nodeEnv,
+    port,
+    cors: isWildcard ? 'wildcard' : corsOrigins.join(','),
+    bodyLimit,
+    uploadsDir,
+  });
 }
 
 bootstrap().catch((err) => {
-  // Surface Joi / config / DB errors with a non-zero exit before the
-  // orchestrator decides the pod is healthy.
+  // Surface Joi / config / DB errors before the orchestrator marks the pod healthy.
+  // Logger may not be up yet, so fall back to stderr.
   // eslint-disable-next-line no-console
-  console.error('[bootstrap] fatal:', err.message ?? err);
+  console.error('[bootstrap] fatal:', err?.message ?? err);
   process.exit(1);
 });
