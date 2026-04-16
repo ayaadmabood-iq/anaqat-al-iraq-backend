@@ -30,6 +30,7 @@ import { Roles } from '@/modules/auth/roles.decorator';
 import { CurrentUser } from '@/modules/auth/current-user.decorator';
 import { JwtPayload } from '@/modules/auth/jwt.strategy';
 import { UserRole } from '@/database';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
 import { ReduceStockDto } from './dto/reduce-stock.dto';
@@ -75,6 +76,8 @@ const imageFileFilter = (
   }
 };
 
+@ApiTags('inventory')
+@ApiBearerAuth('bearer')
 @Controller('inventory')
 @UseGuards(JwtAuthGuard)
 export class InventoryController {
@@ -214,6 +217,15 @@ export class InventoryController {
    * is passed to the recommendations flow for future AI analysis (Phase F).
    */
   @Post('upload')
+  @ApiOperation({ summary: 'Upload a clothing / customer image (multipart form field "file")' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+      required: ['file'],
+    },
+  })
   @UseGuards(RolesGuard)
   @Roles(UserRole.INVENTORY_STAFF, UserRole.MANAGER, UserRole.OWNER, UserRole.SALES_STAFF)
   @UseInterceptors(
@@ -272,6 +284,19 @@ export class InventoryController {
    * with null/empty fields. The mobile review screen handles this gracefully.
    */
   @Post('classify')
+  @ApiOperation({
+    summary: 'Classify an image with Google Vision (opt-in)',
+    description:
+      'Returns `manual_fallback` when GOOGLE_VISION_API_KEY is unset, so the endpoint is safe to ship without an API key.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+      required: ['file'],
+    },
+  })
   @UseGuards(RolesGuard)
   @Roles(UserRole.INVENTORY_STAFF, UserRole.MANAGER, UserRole.OWNER, UserRole.SALES_STAFF)
   @UseInterceptors(

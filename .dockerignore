@@ -1,0 +1,28 @@
+# Anything not strictly needed to build the production image
+node_modules
+dist
+coverage
+
+# Source-control / editor / OS cruft
+.git
+.github
+.vscode
+.idea
+*.swp
+.DS_Store
+
+# Secrets & local state
+.env
+.env.*
+!.env.example
+uploads/
+
+# Dev-only artifacts
+test/
+*.log
+npm-debug.log*
+
+# Docs not needed inside the image
+*.md
+!.env.example
+LICENSE

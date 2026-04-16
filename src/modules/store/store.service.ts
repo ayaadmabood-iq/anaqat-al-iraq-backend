@@ -10,6 +10,10 @@ export class StoreService {
     private storesRepository: Repository<Store>,
   ) {}
 
+  async count(): Promise<number> {
+    return this.storesRepository.count();
+  }
+
   async createStore(data: {
     name: string;
     address?: string;

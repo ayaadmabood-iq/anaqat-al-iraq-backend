@@ -8,6 +8,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { AppModule } from './app.module';
 import type { AppConfig } from './config/configuration';
+import { mountOpenApi } from './openapi';
 
 async function bootstrap() {
   // bufferLogs: true defers log emission until the pino logger is wired.
@@ -49,10 +50,16 @@ async function bootstrap() {
     credentials: !isWildcard,
   });
 
-  app.setGlobalPrefix('api/v1', { exclude: ['healthz', 'metrics'] });
+  app.setGlobalPrefix('api/v1', {
+    exclude: ['healthz', 'metrics', 'api-docs', 'api-docs-json', 'api-docs/(.*)'],
+  });
 
   const expressInstance = app.getHttpAdapter().getInstance();
   expressInstance.use('/uploads', express.static(uploadsDir));
+
+  // Mount OpenAPI/Swagger before the global ValidationPipe is set up; Swagger
+  // needs to introspect decorators, not filter bodies. Spec lives at /api-docs.
+  mountOpenApi(app, config.get<AppConfig['appBaseUrl']>('appBaseUrl') ?? undefined);
 
   app.useGlobalPipes(
     new ValidationPipe({

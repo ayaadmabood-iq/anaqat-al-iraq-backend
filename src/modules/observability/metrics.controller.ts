@@ -1,5 +1,6 @@
 import { Controller, Get, Res } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { register, collectDefaultMetrics } from 'prom-client';
 
@@ -15,6 +16,7 @@ import { register, collectDefaultMetrics } from 'prom-client';
  * Unauthenticated and throttle-exempt by design: Prometheus scrapes it
  * from a known trusted subnet (enforce via ingress / network ACL in prod).
  */
+@ApiTags('metrics')
 @Controller('metrics')
 @SkipThrottle()
 export class MetricsController {
@@ -31,6 +33,7 @@ export class MetricsController {
   }
 
   @Get()
+  @ApiOperation({ summary: 'Prometheus scrape endpoint (text/plain)' })
   async getMetrics(@Res() res: Response): Promise<void> {
     res.set('Content-Type', register.contentType);
     res.end(await register.metrics());

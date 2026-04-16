@@ -10,6 +10,7 @@ import {
   ParseIntPipe,
   ParseUUIDPipe,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SalesService } from './sales.service';
 import { JwtAuthGuard } from '@/modules/auth/jwt-auth.guard';
 import { RolesGuard } from '@/modules/auth/roles.guard';
@@ -20,6 +21,8 @@ import { UserRole } from '@/database';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { SalesReportQueryDto } from './dto/sales-report.query';
 
+@ApiTags('sales')
+@ApiBearerAuth('bearer')
 @Controller('sales')
 @UseGuards(JwtAuthGuard)
 export class SalesController {
@@ -55,6 +58,7 @@ export class SalesController {
   }
 
   @Get('report/summary')
+  @ApiOperation({ summary: 'Summary aggregates (MANAGER/OWNER)' })
   @UseGuards(RolesGuard)
   @Roles(UserRole.MANAGER, UserRole.OWNER)
   async getSalesReport(

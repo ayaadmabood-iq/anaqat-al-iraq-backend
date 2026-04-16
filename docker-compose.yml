@@ -1,0 +1,80 @@
+# Local / staging compose stack.
+# Not intended for multi-node production — use k8s / managed runtimes there.
+#
+# Usage:
+#   docker compose up -d postgres            # DB first
+#   docker compose run --rm migrate          # apply migrations
+#   docker compose up -d app                 # start the API
+#
+#   docker compose logs -f app               # tail structured logs
+#   curl http://localhost:3000/healthz       # readiness probe
+#   open http://localhost:3000/api-docs      # OpenAPI UI
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: anaqat_iraq
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d anaqat_iraq"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot migration container. Always run before `app` after a schema change.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["node", "node_modules/typeorm/cli.js", "migration:run", "-d", "dist/data-source.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      JWT_SECRET: compose-jwt-secret-change-me-in-real-deploys
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      DB_DATABASE: anaqat_iraq
+      CORS_ORIGIN: http://localhost:3000
+      APP_BASE_URL: http://localhost:3000
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      JWT_SECRET: compose-jwt-secret-change-me-in-real-deploys
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      DB_DATABASE: anaqat_iraq
+      CORS_ORIGIN: http://localhost:3000
+      APP_BASE_URL: http://localhost:3000
+    ports:
+      - "3000:3000"
+    volumes:
+      - uploads_data:/app/uploads
+
+volumes:
+  postgres_data:
+  uploads_data:

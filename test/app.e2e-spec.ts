@@ -16,6 +16,7 @@ import * as bcrypt from 'bcrypt';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
+import { mountOpenApi } from '../src/openapi';
 import {
   Store,
   User,
@@ -56,9 +57,12 @@ describe('App e2e — post-hardening regression suite', () => {
         transform: true,
       }),
     );
-    // Match main.ts: /healthz is exempt from the /api/v1 prefix.
-    app.setGlobalPrefix('api/v1', { exclude: ['healthz'] });
+    // Match main.ts: /healthz, /metrics, and /api-docs* are exempt from the /api/v1 prefix.
+    app.setGlobalPrefix('api/v1', {
+      exclude: ['healthz', 'metrics', 'api-docs', 'api-docs-json', 'api-docs/(.*)'],
+    });
 
+    mountOpenApi(app);
     await app.init();
 
     dataSource = app.get(DataSource);
@@ -338,6 +342,50 @@ describe('App e2e — post-hardening regression suite', () => {
         storeId,
         role: 'OWNER',
       })
+      .expect(403);
+  });
+
+  /**
+   * Contract — /api-docs-json exposes a valid OpenAPI 3 document that
+   * lists every controller tag and advertises Bearer auth. Without this
+   * guard an accidental removal of @ApiTags / @ApiBearerAuth would ship
+   * a broken contract to frontend / integration teams.
+   */
+  it('GET /api-docs-json returns a usable OpenAPI 3 document', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api-docs-json')
+      .expect(200);
+    expect(res.body.openapi).toMatch(/^3\./);
+    expect(res.body.info.title).toBe('Anaqat Al-Iraq Backend API');
+    expect(res.body.components.securitySchemes.bearer).toBeDefined();
+    const tags = (res.body.tags || []).map((t: any) => t.name);
+    for (const expected of [
+      'auth',
+      'stores',
+      'users',
+      'inventory',
+      'sales',
+      'health',
+      'metrics',
+    ]) {
+      expect(tags).toContain(expected);
+    }
+    // Every /api/v1 operation that needs auth must carry the security ref.
+    const salesGet = res.body.paths['/api/v1/sales']?.get;
+    expect(salesGet).toBeDefined();
+    expect(
+      salesGet.security?.some((s: any) => Object.keys(s).includes('bearer')),
+    ).toBe(true);
+  });
+
+  /**
+   * Security contract — POST /stores is bootstrap-only. Our test seed
+   * already inserted one store, so the gate must 403 on a second attempt.
+   */
+  it('POST /stores returns 403 when a store already exists', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/stores')
+      .send({ name: 'Second Store' })
       .expect(403);
   });
 
