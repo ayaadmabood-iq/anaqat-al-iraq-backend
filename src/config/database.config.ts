@@ -1,15 +1,27 @@
+import { ConfigService } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
-import * as path from 'path';
+import type { AppConfig } from './configuration';
 
-export const getDatabaseConfig = (): TypeOrmModuleOptions => ({
-  type: 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432', 10),
-  username: process.env.DB_USERNAME || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres',
-  database: process.env.DB_DATABASE || 'anaqat_iraq',
-  entities: [path.join(__dirname, '..', 'database', 'entities', '*.entity{.ts,.js}')],
-  synchronize: process.env.NODE_ENV !== 'production',
-  logging: process.env.NODE_ENV !== 'production',
-  dropSchema: false,
-});
+/**
+ * Async factory for TypeORM consumed by TypeOrmModule.forRootAsync.
+ * Reads exclusively from validated ConfigService — never process.env.
+ */
+export const buildDatabaseConfig = (
+  config: ConfigService,
+  entities: TypeOrmModuleOptions['entities'],
+): TypeOrmModuleOptions => {
+  const db = config.get<AppConfig['database']>('database');
+  if (!db) throw new Error('Database config missing from ConfigService');
+  return {
+    type: 'postgres',
+    host: db.host,
+    port: db.port,
+    username: db.username,
+    password: db.password,
+    database: db.name,
+    entities,
+    synchronize: db.synchronize,
+    logging: db.logging,
+    dropSchema: false,
+  };
+};

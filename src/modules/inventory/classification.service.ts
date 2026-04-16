@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import type { AppConfig } from '@/config/configuration';
 
 // ─── Public contract ─────────────────────────────────────────────────────────
 
@@ -183,6 +185,8 @@ function rgbToColorFamily(r: number, g: number, b: number): string {
 export class ClassificationService {
   private readonly logger = new Logger(ClassificationService.name);
 
+  constructor(private readonly config: ConfigService) {}
+
   /**
    * Classify a clothing image using Google Cloud Vision API.
    *
@@ -191,7 +195,9 @@ export class ClassificationService {
    *          manual_fallback result if the API key is not configured.
    */
   async classify(imageBuffer: Buffer): Promise<VisionClassificationResult> {
-    const apiKey = process.env.GOOGLE_VISION_API_KEY;
+    const apiKey = this.config.get<AppConfig['googleVisionApiKey']>(
+      'googleVisionApiKey',
+    );
 
     if (!apiKey) {
       this.logger.warn(

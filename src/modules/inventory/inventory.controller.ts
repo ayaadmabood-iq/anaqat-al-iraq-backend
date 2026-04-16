@@ -12,13 +12,16 @@ import {
   UploadedFile,
   BadRequestException,
   Req,
+  ParseUUIDPipe,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage, memoryStorage } from 'multer';
 import { extname, join } from 'path';
 import { v4 as uuid } from 'uuid';
 import * as fs from 'fs';
 import { Request } from 'express';
+import type { AppConfig } from '@/config/configuration';
 import { InventoryService } from './inventory.service';
 import { ClassificationService } from './classification.service';
 import { JwtAuthGuard } from '@/modules/auth/jwt-auth.guard';
@@ -30,6 +33,9 @@ import { UserRole } from '@/database';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
 import { ReduceStockDto } from './dto/reduce-stock.dto';
+import { AddSizeDto } from './dto/add-size.dto';
+import { UpdateStockDto } from './dto/update-stock.dto';
+import { ListItemsQueryDto } from './dto/list-items.query';
 
 /**
  * Multer storage configuration.
@@ -75,6 +81,7 @@ export class InventoryController {
   constructor(
     private inventoryService: InventoryService,
     private classificationService: ClassificationService,
+    private config: ConfigService,
   ) {}
 
   @Post('items')
@@ -90,14 +97,12 @@ export class InventoryController {
   @Get('items')
   async getItems(
     @CurrentUser() user: JwtPayload,
-    @Query('categoryId') categoryId?: string,
-    @Query('isActive') isActive?: boolean,
-    @Query('colorFamily') colorFamily?: string,
+    @Query() query: ListItemsQueryDto,
   ) {
     return this.inventoryService.getItemsByStore(user.storeId, {
-      categoryId,
-      isActive,
-      colorFamily,
+      categoryId: query.categoryId,
+      isActive: query.isActive,
+      colorFamily: query.colorFamily,
     });
   }
 
@@ -106,13 +111,16 @@ export class InventoryController {
     @CurrentUser() user: JwtPayload,
     @Query('q') searchTerm: string,
   ) {
+    if (!searchTerm || !searchTerm.trim()) {
+      throw new BadRequestException('Query parameter "q" is required');
+    }
     return this.inventoryService.searchItems(user.storeId, searchTerm);
   }
 
   @Get('items/:id')
   async getItem(
     @CurrentUser() user: JwtPayload,
-    @Param('id') itemId: string,
+    @Param('id', new ParseUUIDPipe()) itemId: string,
   ) {
     return this.inventoryService.getItemById(itemId, user.storeId);
   }
@@ -122,7 +130,7 @@ export class InventoryController {
   @Roles(UserRole.INVENTORY_STAFF, UserRole.MANAGER, UserRole.OWNER)
   async updateItem(
     @CurrentUser() user: JwtPayload,
-    @Param('id') itemId: string,
+    @Param('id', new ParseUUIDPipe()) itemId: string,
     @Body() updateItemDto: UpdateItemDto,
   ) {
     return this.inventoryService.updateItem(itemId, user.storeId, updateItemDto);
@@ -133,7 +141,7 @@ export class InventoryController {
   @Roles(UserRole.MANAGER, UserRole.OWNER)
   async deleteItem(
     @CurrentUser() user: JwtPayload,
-    @Param('id') itemId: string,
+    @Param('id', new ParseUUIDPipe()) itemId: string,
   ) {
     await this.inventoryService.deleteItem(itemId, user.storeId);
     return { message: 'Item deleted successfully' };
@@ -144,8 +152,8 @@ export class InventoryController {
   @Roles(UserRole.INVENTORY_STAFF, UserRole.MANAGER, UserRole.OWNER)
   async addSize(
     @CurrentUser() user: JwtPayload,
-    @Param('id') itemId: string,
-    @Body() data: { size: string; quantity: number },
+    @Param('id', new ParseUUIDPipe()) itemId: string,
+    @Body() data: AddSizeDto,
   ) {
     return this.inventoryService.addSize(itemId, user.storeId, data.size, data.quantity);
   }
@@ -155,9 +163,9 @@ export class InventoryController {
   @Roles(UserRole.INVENTORY_STAFF, UserRole.MANAGER, UserRole.OWNER)
   async updateStock(
     @CurrentUser() user: JwtPayload,
-    @Param('id') itemId: string,
+    @Param('id', new ParseUUIDPipe()) itemId: string,
     @Param('size') size: string,
-    @Body() data: { quantity: number },
+    @Body() data: UpdateStockDto,
   ) {
     return this.inventoryService.updateStock(itemId, user.storeId, size, data.quantity);
   }
@@ -167,7 +175,7 @@ export class InventoryController {
   @Roles(UserRole.SALES_STAFF, UserRole.MANAGER, UserRole.OWNER)
   async reduceStock(
     @CurrentUser() user: JwtPayload,
-    @Param('id') itemId: string,
+    @Param('id', new ParseUUIDPipe()) itemId: string,
     @Body() reduceStockDto: ReduceStockDto,
   ) {
     return this.inventoryService.reduceStock(itemId, user.storeId, reduceStockDto);
@@ -178,7 +186,7 @@ export class InventoryController {
   @Roles(UserRole.MANAGER, UserRole.OWNER)
   async removeSize(
     @CurrentUser() user: JwtPayload,
-    @Param('id') itemId: string,
+    @Param('id', new ParseUUIDPipe()) itemId: string,
     @Param('size') size: string,
   ) {
     await this.inventoryService.removeSize(itemId, user.storeId, size);
@@ -228,9 +236,8 @@ export class InventoryController {
     // Build the public URL using the request host
     // In dev: http://localhost:3000/uploads/UUID.jpg
     // In prod: set APP_BASE_URL env var to override
-    const baseUrl =
-      process.env.APP_BASE_URL ||
-      `${req.protocol}://${req.get('host')}`;
+    const configuredBase = this.config.get<AppConfig['appBaseUrl']>('appBaseUrl');
+    const baseUrl = configuredBase || `${req.protocol}://${req.get('host')}`;
 
     const imageUrl = `${baseUrl}/uploads/${file.filename}`;
 

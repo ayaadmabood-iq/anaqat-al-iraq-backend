@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '@/modules/auth/jwt-auth.guard';
@@ -15,6 +16,8 @@ import { Roles } from '@/modules/auth/roles.decorator';
 import { CurrentUser } from '@/modules/auth/current-user.decorator';
 import { JwtPayload } from '@/modules/auth/jwt.strategy';
 import { UserRole } from '@/database';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -26,13 +29,7 @@ export class UsersController {
   @Roles(UserRole.OWNER, UserRole.MANAGER)
   async createUser(
     @CurrentUser() user: JwtPayload,
-    @Body()
-    data: {
-      username: string;
-      password: string;
-      fullName: string;
-      role: UserRole;
-    },
+    @Body() data: CreateUserDto,
   ) {
     return this.usersService.createUser(user.storeId, data);
   }
@@ -45,7 +42,7 @@ export class UsersController {
   @Get(':id')
   async getUser(
     @CurrentUser() user: JwtPayload,
-    @Param('id') userId: string,
+    @Param('id', new ParseUUIDPipe()) userId: string,
   ) {
     return this.usersService.getUserById(userId, user.storeId);
   }
@@ -55,13 +52,8 @@ export class UsersController {
   @Roles(UserRole.OWNER, UserRole.MANAGER)
   async updateUser(
     @CurrentUser() user: JwtPayload,
-    @Param('id') userId: string,
-    @Body()
-    data: Partial<{
-      fullName: string;
-      role: UserRole;
-      isActive: boolean;
-    }>,
+    @Param('id', new ParseUUIDPipe()) userId: string,
+    @Body() data: UpdateUserDto,
   ) {
     return this.usersService.updateUser(userId, user.storeId, data);
   }
@@ -71,7 +63,7 @@ export class UsersController {
   @Roles(UserRole.OWNER)
   async deleteUser(
     @CurrentUser() user: JwtPayload,
-    @Param('id') userId: string,
+    @Param('id', new ParseUUIDPipe()) userId: string,
   ) {
     await this.usersService.deleteUser(userId, user.storeId);
     return { message: 'User deleted successfully' };

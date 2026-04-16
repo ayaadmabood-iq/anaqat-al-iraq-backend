@@ -8,6 +8,7 @@ import {
   UseGuards,
   DefaultValuePipe,
   ParseIntPipe,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { SalesService } from './sales.service';
 import { JwtAuthGuard } from '@/modules/auth/jwt-auth.guard';
@@ -17,6 +18,7 @@ import { CurrentUser } from '@/modules/auth/current-user.decorator';
 import { JwtPayload } from '@/modules/auth/jwt.strategy';
 import { UserRole } from '@/database';
 import { CreateSaleDto } from './dto/create-sale.dto';
+import { SalesReportQueryDto } from './dto/sales-report.query';
 
 @Controller('sales')
 @UseGuards(JwtAuthGuard)
@@ -45,19 +47,11 @@ export class SalesController {
   @Get('user/:userId')
   async getSalesByUser(
     @CurrentUser() user: JwtPayload,
-    @Param('userId') userId: string,
+    @Param('userId', new ParseUUIDPipe()) userId: string,
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
     @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
   ) {
     return this.salesService.getSalesByUser(user.storeId, userId, limit, offset);
-  }
-
-  @Get(':id')
-  async getSale(
-    @CurrentUser() user: JwtPayload,
-    @Param('id') saleId: string,
-  ) {
-    return this.salesService.getSaleById(saleId, user.storeId);
   }
 
   @Get('report/summary')
@@ -65,11 +59,18 @@ export class SalesController {
   @Roles(UserRole.MANAGER, UserRole.OWNER)
   async getSalesReport(
     @CurrentUser() user: JwtPayload,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
+    @Query() query: SalesReportQueryDto,
   ) {
-    const parsedStartDate = startDate ? new Date(startDate) : undefined;
-    const parsedEndDate = endDate ? new Date(endDate) : undefined;
+    const parsedStartDate = query.startDate ? new Date(query.startDate) : undefined;
+    const parsedEndDate = query.endDate ? new Date(query.endDate) : undefined;
     return this.salesService.getSalesReport(user.storeId, parsedStartDate, parsedEndDate);
+  }
+
+  @Get(':id')
+  async getSale(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', new ParseUUIDPipe()) saleId: string,
+  ) {
+    return this.salesService.getSaleById(saleId, user.storeId);
   }
 }

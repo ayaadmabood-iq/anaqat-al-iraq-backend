@@ -3,7 +3,7 @@ import {
   Post,
   Body,
   Query,
-  BadRequestException,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -16,11 +16,8 @@ export class AuthController {
   @Post('login')
   async login(
     @Body() loginDto: LoginDto,
-    @Query('storeId') storeId: string,
+    @Query('storeId', new ParseUUIDPipe({ version: '4' })) storeId: string,
   ) {
-    if (!storeId) {
-      throw new BadRequestException('storeId query parameter is required');
-    }
     return this.authService.login(loginDto, storeId);
   }
 

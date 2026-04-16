@@ -1,45 +1,49 @@
-import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
+import type { AppConfig } from './config/configuration';
 import * as path from 'path';
 import * as fs from 'fs';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const config = app.get(ConfigService);
 
-  // Ensure uploads directory exists.
-  // process.cwd() = backend/ when started via `npm run start:dev` from backend directory.
-  // This is consistent with the multer destination in inventory.controller.ts.
-  const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
+  const uploadDirRaw = config.get<string>('uploadDir') as string;
+  const uploadsDir = path.isAbsolute(uploadDirRaw)
+    ? uploadDirRaw
+    : path.join(process.cwd(), uploadDirRaw);
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
 
-  // Enable CORS
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: config.get<string>('corsOrigin') as string,
     credentials: true,
   });
 
-  // Global prefix
   app.setGlobalPrefix('api/v1');
 
-  // Serve uploaded files statically
   const express = app.getHttpAdapter().getInstance();
   express.use('/uploads', require('express').static(uploadsDir));
 
-  // Global validation pipe
+  /**
+   * enableImplicitConversion is deliberately OFF.
+   * It converts "false" → Boolean("false") = true (any non-empty string is
+   * truthy), silently breaking boolean query filters. Every primitive @Query
+   * now uses an explicit pipe (DefaultValuePipe+ParseIntPipe, ParseUUIDPipe)
+   * and every boolean field goes through an @Transform in its DTO.
+   */
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
-      transformOptions: { enableImplicitConversion: true },
     }),
   );
 
-  const port = process.env.PORT || 3000;
+  const port = config.get<AppConfig['port']>('port') as number;
   await app.listen(port);
   console.log(`Server running on http://localhost:${port}/api/v1`);
   console.log(`Uploads served from ${uploadsDir}`);

@@ -7,26 +7,22 @@ import {
   Body,
   Param,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { StoreService } from './store.service';
 import { JwtAuthGuard } from '@/modules/auth/jwt-auth.guard';
 import { RolesGuard } from '@/modules/auth/roles.guard';
 import { Roles } from '@/modules/auth/roles.decorator';
 import { UserRole } from '@/database';
+import { CreateStoreDto } from './dto/create-store.dto';
+import { UpdateStoreDto } from './dto/update-store.dto';
 
 @Controller('stores')
 export class StoreController {
   constructor(private storeService: StoreService) {}
 
   @Post()
-  async createStore(
-    @Body()
-    data: {
-      name: string;
-      address?: string;
-      phone?: string;
-    },
-  ) {
+  async createStore(@Body() data: CreateStoreDto) {
     return this.storeService.createStore(data);
   }
 
@@ -36,7 +32,7 @@ export class StoreController {
   }
 
   @Get(':id')
-  async getStore(@Param('id') storeId: string) {
+  async getStore(@Param('id', new ParseUUIDPipe()) storeId: string) {
     return this.storeService.getStoreById(storeId);
   }
 
@@ -44,14 +40,8 @@ export class StoreController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER)
   async updateStore(
-    @Param('id') storeId: string,
-    @Body()
-    data: Partial<{
-      name: string;
-      address: string;
-      phone: string;
-      isActive: boolean;
-    }>,
+    @Param('id', new ParseUUIDPipe()) storeId: string,
+    @Body() data: UpdateStoreDto,
   ) {
     return this.storeService.updateStore(storeId, data);
   }
@@ -59,7 +49,7 @@ export class StoreController {
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.OWNER)
-  async deleteStore(@Param('id') storeId: string) {
+  async deleteStore(@Param('id', new ParseUUIDPipe()) storeId: string) {
     await this.storeService.deleteStore(storeId);
     return { message: 'Store deleted successfully' };
   }

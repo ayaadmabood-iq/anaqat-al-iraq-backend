@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { getDatabaseConfig } from '@/config/database.config';
+import configuration from '@/config/configuration';
+import { validationSchema } from '@/config/validation.schema';
+import { buildDatabaseConfig } from '@/config/database.config';
 import {
   Store,
   User,
@@ -22,29 +24,37 @@ import { StoreModule } from '@/modules/store/store.module';
 import { InventoryModule } from '@/modules/inventory/inventory.module';
 import { SalesModule } from '@/modules/sales/sales.module';
 
+const entities = [
+  Store,
+  User,
+  ClothingCategory,
+  ClothingItem,
+  SizeStock,
+  Sale,
+  SaleLine,
+  CustomerSession,
+  OutfitRecommendation,
+  OutfitRecommendationItem,
+  AiProcessingJob,
+  AuditLog,
+];
+
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      load: [configuration],
+      validationSchema,
+      validationOptions: { abortEarly: false, allowUnknown: true },
+      envFilePath: ['.env'],
     }),
-    TypeOrmModule.forRoot({
-      ...getDatabaseConfig(),
-      entities: [
-        Store,
-        User,
-        ClothingCategory,
-        ClothingItem,
-        SizeStock,
-        Sale,
-        SaleLine,
-        CustomerSession,
-        OutfitRecommendation,
-        OutfitRecommendationItem,
-        AiProcessingJob,
-        AuditLog,
-      ],
+    TypeOrmModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        buildDatabaseConfig(config, entities),
     }),
+    TypeOrmModule.forFeature(entities),
     AuthModule,
     UsersModule,
     StoreModule,
