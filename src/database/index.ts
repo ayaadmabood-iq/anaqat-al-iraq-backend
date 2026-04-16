@@ -13,3 +13,5 @@ export { OutfitRecommendation } from './entities/outfit-recommendation.entity';
 export { OutfitRecommendationItem } from './entities/outfit-recommendation-item.entity';
 export { AiProcessingJob, JobType, JobStatus } from './entities/ai-processing-job.entity';
 export { AuditLog } from './entities/audit-log.entity';
+export { RecommendationSignal } from './entities/recommendation-signal.entity';
+export { InventoryMatchScore } from './entities/inventory-match-score.entity';

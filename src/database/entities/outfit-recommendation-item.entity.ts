@@ -39,4 +39,10 @@ export class OutfitRecommendationItem {
 
   @Column('varchar', { length: 100, nullable: false })
   role: string;
+
+  @Column('varchar', { length: 10, nullable: true })
+  sizeSelected: string | null;
+
+  @Column('integer', { nullable: true })
+  unitPriceIqd: number | null;
 }

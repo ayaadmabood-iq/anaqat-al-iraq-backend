@@ -24,6 +24,8 @@ import {
   OutfitRecommendationItem,
   AiProcessingJob,
   AuditLog,
+  RecommendationSignal,
+  InventoryMatchScore,
 } from './database';
 
 const c = configuration();
@@ -49,6 +51,8 @@ export default new DataSource({
     OutfitRecommendationItem,
     AiProcessingJob,
     AuditLog,
+    RecommendationSignal,
+    InventoryMatchScore,
   ],
   migrations: [path.join(__dirname, 'database', 'migrations', '*.{ts,js}')],
   migrationsTableName: 'typeorm_migrations',

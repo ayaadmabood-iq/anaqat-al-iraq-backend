@@ -20,6 +20,8 @@ import {
   OutfitRecommendationItem,
   AiProcessingJob,
   AuditLog,
+  RecommendationSignal,
+  InventoryMatchScore,
 } from '@/database';
 import { AuthModule } from '@/modules/auth/auth.module';
 import { UsersModule } from '@/modules/users/users.module';
@@ -42,6 +44,8 @@ const entities = [
   OutfitRecommendationItem,
   AiProcessingJob,
   AuditLog,
+  RecommendationSignal,
+  InventoryMatchScore,
 ];
 
 @Module({

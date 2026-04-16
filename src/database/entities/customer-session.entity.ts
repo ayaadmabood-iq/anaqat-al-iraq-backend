@@ -44,6 +44,15 @@ export class CustomerSession {
   @Column('text', { nullable: true })
   notes: string;
 
+  @Column('varchar', { length: 10, nullable: true })
+  customerGender: string | null;
+
+  @Column('varchar', { length: 50, nullable: true })
+  occasionContext: string | null;
+
+  @Column('varchar', { length: 20, nullable: false, default: 'OPEN' })
+  sessionStatus: string;
+
   @CreateDateColumn()
   createdAt: Date;
 
