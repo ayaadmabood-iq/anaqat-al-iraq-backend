@@ -38,18 +38,20 @@ export class InventoryService {
       throw new NotFoundException('Category not found');
     }
 
-    // Create clothing item
+    // Create clothing item. The `sizes` relation has cascade:true, so saving
+    // the item also inserts its size rows. Don't also call sizeStockRepository.save()
+    // for the same rows — that produces duplicate-key errors on UQ_clothing_item_size.
+    const { sizes: requestedSizes, ...itemFields } = createItemDto;
     const item = this.itemsRepository.create({
-      ...createItemDto,
+      ...itemFields,
       storeId,
       categoryId: createItemDto.categoryId,
     });
 
     const savedItem = await this.itemsRepository.save(item);
 
-    // Add sizes if provided
-    if (createItemDto.sizes && createItemDto.sizes.length > 0) {
-      const sizeStocks = createItemDto.sizes.map((size) =>
+    if (requestedSizes && requestedSizes.length > 0) {
+      const sizeStocks = requestedSizes.map((size) =>
         this.sizeStockRepository.create({
           clothingItemId: savedItem.id,
           ...size,

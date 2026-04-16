@@ -6,6 +6,8 @@ import {
   Param,
   Query,
   UseGuards,
+  DefaultValuePipe,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { SalesService } from './sales.service';
 import { JwtAuthGuard } from '@/modules/auth/jwt-auth.guard';
@@ -34,8 +36,8 @@ export class SalesController {
   @Get()
   async getSales(
     @CurrentUser() user: JwtPayload,
-    @Query('limit') limit: number = 50,
-    @Query('offset') offset: number = 0,
+    @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
   ) {
     return this.salesService.getSalesByStore(user.storeId, limit, offset);
   }
@@ -44,8 +46,8 @@ export class SalesController {
   async getSalesByUser(
     @CurrentUser() user: JwtPayload,
     @Param('userId') userId: string,
-    @Query('limit') limit: number = 50,
-    @Query('offset') offset: number = 0,
+    @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
   ) {
     return this.salesService.getSalesByUser(user.storeId, userId, limit, offset);
   }
