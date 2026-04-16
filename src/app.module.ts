@@ -30,6 +30,7 @@ import { InventoryModule } from '@/modules/inventory/inventory.module';
 import { SalesModule } from '@/modules/sales/sales.module';
 import { HealthModule } from '@/modules/health/health.module';
 import { ObservabilityModule } from '@/modules/observability/observability.module';
+import { SalesIntelligenceModule } from '@/modules/sales-intelligence/sales-intelligence.module';
 
 const entities = [
   Store,
@@ -79,6 +80,7 @@ const entities = [
     StoreModule,
     InventoryModule,
     SalesModule,
+    SalesIntelligenceModule,
     HealthModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
