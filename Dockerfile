@@ -32,8 +32,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Bring in wget for the HEALTHCHECK; node:alpine ships without it.
-RUN apk add --no-cache wget tini
+# node:22-alpine already ships BusyBox wget, so the HEALTHCHECK below works
+# without `apk add`. We also rely on Node 22 correctly receiving SIGTERM
+# when it is PID 1 — combined with app.enableShutdownHooks() that gives us
+# clean shutdown without needing tini.
 
 # Run as an unprivileged user. The base image already ships a `node` user
 # (uid 1000) — reuse it instead of creating a new one.
@@ -48,11 +50,7 @@ RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
 USER node
 EXPOSE 3000
 
-# tini reaps zombie children and forwards SIGTERM cleanly to the node process,
-# which lets our enableShutdownHooks() path actually run.
-ENTRYPOINT ["/sbin/tini", "--"]
-
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://127.0.0.1:3000/healthz || exit 1
+  CMD wget -qO- http://127.0.0.1:3000/healthz >/dev/null 2>&1 || exit 1
 
 CMD ["node", "dist/main.js"]
