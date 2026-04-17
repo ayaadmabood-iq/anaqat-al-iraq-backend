@@ -19,6 +19,7 @@ import { RecommendationEngineService } from './services/recommendation-engine.se
 import { InventoryMatchingService } from './services/inventory-matching.service';
 import { OutcomeTrackingService } from './services/outcome-tracking.service';
 import { AiProcessingJobService } from './services/ai-processing-job.service';
+import { ReportingService } from './services/reporting.service';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { AiProcessingJobService } from './services/ai-processing-job.service';
     InventoryMatchingService,
     OutcomeTrackingService,
     AiProcessingJobService,
+    ReportingService,
   ],
 })
 export class SalesIntelligenceModule {}

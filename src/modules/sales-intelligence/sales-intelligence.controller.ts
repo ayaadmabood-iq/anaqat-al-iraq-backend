@@ -13,9 +13,7 @@ import {
   ParseIntPipe,
   HttpCode,
   HttpStatus,
-  NotImplementedException,
   BadRequestException,
-  NotFoundException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -39,6 +37,7 @@ import { CustomerSessionService } from './services/customer-session.service';
 import { RecommendationEngineService } from './services/recommendation-engine.service';
 import { OutcomeTrackingService } from './services/outcome-tracking.service';
 import { AiProcessingJobService } from './services/ai-processing-job.service';
+import { ReportingService } from './services/reporting.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { ListSessionsQueryDto } from './dto/list-sessions-query.dto';
 import { ConvertRecommendationDto } from './dto/convert-recommendation.dto';
@@ -60,6 +59,7 @@ export class SalesIntelligenceController {
     private readonly engine: RecommendationEngineService,
     private readonly outcomeService: OutcomeTrackingService,
     private readonly jobService: AiProcessingJobService,
+    private readonly reportingService: ReportingService,
   ) {}
 
   // ── Sessions ──────────────────────────────────────────────────────────────
@@ -194,7 +194,8 @@ export class SalesIntelligenceController {
     @Param('sessionId', new ParseUUIDPipe()) sessionId: string,
     @Param('rank', ParseIntPipe) rank: number,
   ) {
-    throw new NotImplementedException();
+    const rec = await this.outcomeService.markPresented(sessionId, rank);
+    return { rank: rec.rank, wasPresented: rec.wasPresented };
   }
 
   @Post('sessions/:sessionId/recommendations/:rank/convert')
@@ -206,8 +207,17 @@ export class SalesIntelligenceController {
     @Param('sessionId', new ParseUUIDPipe()) sessionId: string,
     @Param('rank', ParseIntPipe) rank: number,
     @Body() dto: ConvertRecommendationDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    throw new NotImplementedException();
+    const session = await this.sessionService.findOne(sessionId);
+    const rec = await this.outcomeService.convert(sessionId, rank, dto.saleId, session.storeId);
+    return {
+      sessionId,
+      rank: rec.rank,
+      convertedSaleId: rec.convertedSaleId,
+      convertedAt: rec.convertedAt,
+      sessionStatus: 'CONVERTED',
+    };
   }
 
   // ── Reporting ─────────────────────────────────────────────────────────────
@@ -219,7 +229,7 @@ export class SalesIntelligenceController {
     @Query('from') from: string,
     @Query('to') to: string,
   ) {
-    throw new NotImplementedException();
+    return this.reportingService.conversionReport(storeId, from, to);
   }
 
   // ── Mappers ───────────────────────────────────────────────────────────────
