@@ -14,6 +14,8 @@ import {
   HttpCode,
   HttpStatus,
   NotImplementedException,
+  BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -69,13 +71,20 @@ export class SalesIntelligenceController {
     @Body() dto: CreateSessionDto,
     @CurrentUser() user: JwtPayload,
   ) {
-    throw new NotImplementedException();
+    const session = await this.sessionService.create(dto, user.userId);
+    return {
+      sessionId: session.id,
+      storeId: session.storeId,
+      status: session.sessionStatus,
+      createdAt: session.createdAt,
+    };
   }
 
   @Get('sessions')
   @ApiOperation({ summary: 'List customer sessions for a store' })
   async listSessions(@Query() query: ListSessionsQueryDto) {
-    throw new NotImplementedException();
+    const { data, total } = await this.sessionService.findAll(query);
+    return { data, total };
   }
 
   @Get('sessions/:sessionId')
@@ -83,7 +92,8 @@ export class SalesIntelligenceController {
   async getSession(
     @Param('sessionId', new ParseUUIDPipe()) sessionId: string,
   ) {
-    throw new NotImplementedException();
+    const session = await this.sessionService.findOne(sessionId);
+    return this.mapSession(session);
   }
 
   // ── Recommendation pipeline ───────────────────────────────────────────────
@@ -103,7 +113,8 @@ export class SalesIntelligenceController {
   @UseInterceptors(
     FileInterceptor('photo', {
       storage: diskStorage({
-        destination: (req, file, cb) => cb(null, process.env.UPLOAD_DIR || 'uploads'),
+        destination: (req, file, cb) =>
+          cb(null, process.env.UPLOAD_DIR || 'uploads'),
         filename: (req, file, cb) =>
           cb(null, `session-${uuid()}${path.extname(file.originalname)}`),
       }),
@@ -121,7 +132,39 @@ export class SalesIntelligenceController {
     @Param('sessionId', new ParseUUIDPipe()) sessionId: string,
     @UploadedFile() photo: Express.Multer.File,
   ) {
-    throw new NotImplementedException();
+    if (!photo) {
+      throw new BadRequestException('Photo file is required (jpeg, png, or webp, max 5MB)');
+    }
+
+    const session = await this.sessionService.findOne(sessionId);
+
+    const result = await this.engine.run(
+      sessionId,
+      session.storeId,
+      photo.path,
+      session.occasionContext,
+    );
+
+    return {
+      sessionId,
+      jobId: result.jobId,
+      status: 'COMPLETED',
+      fallback: result.fallback || undefined,
+      fallbackReason: result.fallbackReason,
+      signal: result.signal
+        ? {
+            source: result.signal.source,
+            primaryColor: result.signal.primaryColor,
+            primaryHex: result.signal.primaryHex,
+            audienceTag: result.signal.audienceTag,
+            categoryHints: result.signal.categoryHints,
+          }
+        : null,
+      recommendations: result.recommendations.map((r, i) =>
+        this.mapRecommendation(r),
+      ),
+      emptyReason: result.emptyReason,
+    };
   }
 
   // ── Job polling ───────────────────────────────────────────────────────────
@@ -131,7 +174,13 @@ export class SalesIntelligenceController {
   async getJob(
     @Param('jobId', new ParseUUIDPipe()) jobId: string,
   ) {
-    throw new NotImplementedException();
+    const job = await this.jobService.findOne(jobId);
+    return {
+      jobId: job.id,
+      status: job.status,
+      createdAt: job.createdAt,
+      completedAt: job.completedAt,
+    };
   }
 
   // ── Outcome tracking ─────────────────────────────────────────────────────
@@ -171,5 +220,52 @@ export class SalesIntelligenceController {
     @Query('to') to: string,
   ) {
     throw new NotImplementedException();
+  }
+
+  // ── Mappers ───────────────────────────────────────────────────────────────
+
+  private mapRecommendation(rec: any) {
+    return {
+      rank: rec.rank,
+      outfitLabel: rec.outfitLabel,
+      totalPriceIqd: rec.totalPriceIqd,
+      wasPresented: rec.wasPresented,
+      convertedAt: rec.convertedAt,
+      convertedSaleId: rec.convertedSaleId,
+      reasonAr: rec.reasonAr,
+      reasonEn: rec.reasonEn,
+      items: (rec.items ?? []).map((item: any) => ({
+        role: item.role,
+        itemId: item.clothingItemId,
+        sizeSelected: item.sizeSelected,
+        unitPriceIqd: item.unitPriceIqd,
+        item: item.clothingItem
+          ? {
+              nameAr: item.clothingItem.notes ?? null,
+              nameEn: item.clothingItem.styleTag ?? null,
+              primaryColor: item.clothingItem.primaryColor,
+              colorFamily: item.clothingItem.colorFamily,
+              imageUrl: item.clothingItem.imageUrl,
+            }
+          : undefined,
+      })),
+    };
+  }
+
+  private mapSession(session: any) {
+    return {
+      sessionId: session.id,
+      storeId: session.storeId,
+      userId: session.userId,
+      status: session.sessionStatus,
+      notes: session.notes,
+      customerGender: session.customerGender,
+      occasionContext: session.occasionContext,
+      customerImageUrl: session.customerImageUrl,
+      createdAt: session.createdAt,
+      recommendations: (session.recommendations ?? [])
+        .sort((a: any, b: any) => a.rank - b.rank)
+        .map((r: any) => this.mapRecommendation(r)),
+    };
   }
 }
