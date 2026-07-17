@@ -10,6 +10,7 @@ export { OrderTransferProof } from './entities/order-transfer-proof.entity';
 export { IssuedCopy } from './entities/issued-copy.entity';
 export { IssuedCopyGeneration } from './entities/issued-copy-generation.entity';
 export { DownloadLog } from './entities/download-log.entity';
+export { DownloadToken } from './entities/download-token.entity';
 export { AuditLog } from './entities/audit-log.entity';
 export { Setting } from './entities/setting.entity';
 export { ContentPage } from './entities/content-page.entity';
@@ -27,6 +28,7 @@ import { OrderTransferProof } from './entities/order-transfer-proof.entity';
 import { IssuedCopy } from './entities/issued-copy.entity';
 import { IssuedCopyGeneration } from './entities/issued-copy-generation.entity';
 import { DownloadLog } from './entities/download-log.entity';
+import { DownloadToken } from './entities/download-token.entity';
 import { AuditLog } from './entities/audit-log.entity';
 import { Setting } from './entities/setting.entity';
 import { ContentPage } from './entities/content-page.entity';
@@ -45,6 +47,7 @@ export const ALL_ENTITIES = [
   IssuedCopy,
   IssuedCopyGeneration,
   DownloadLog,
+  DownloadToken,
   AuditLog,
   Setting,
   ContentPage,

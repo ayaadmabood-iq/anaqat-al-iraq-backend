@@ -5,6 +5,8 @@ import { AppModule } from '@/app.module';
 import { DataSource } from 'typeorm';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as bcrypt from 'bcrypt';
+import { generateSecret as otplibGenerateSecret, generateSync as otplibGenerateSync } from 'otplib';
 
 /**
  * Boot the real AppModule against the test Postgres. Drops and re-migrates
@@ -95,22 +97,27 @@ export async function seedPublishedBook(
 
 /**
  * Bootstraps a super_admin via the schema-level path (SET LOCAL
- * qasdiya.bootstrap = 'on') — mirrors scripts/bootstrap-owner.ts.
+ * qasdiya.bootstrap = 'on') — mirrors scripts/bootstrap-owner.ts. MFA is
+ * enabled so tests exercise the same login path as production.
  */
 export async function bootstrapOwner(
   ds: DataSource,
   email = 'owner@example.com',
-): Promise<{ userId: string }> {
-  const bcrypt = await import('bcrypt');
+): Promise<{ userId: string; mfaSecret: string; mfaCode: () => string }> {
   const hash = await bcrypt.hash('OwnerPassw0rd!', 4);
+  const secret = otplibGenerateSecret({ length: 20 });
   await ds.transaction(async (tx) => {
     await tx.query(`SET LOCAL qasdiya.bootstrap = 'on'`);
     await tx.query(
-      `INSERT INTO users ("fullName", email, "passwordHash", role, "emailVerified", "isActive", "privacyAccepted", "termsAccepted", "acceptedAt", "tokenVersion")
-       VALUES ('Owner', $1, $2, 'super_admin', true, true, true, true, now(), 1)`,
-      [email, hash],
+      `INSERT INTO users ("fullName", email, "passwordHash", role, "emailVerified", "isActive",
+                          "privacyAccepted", "termsAccepted", "acceptedAt", "tokenVersion",
+                          "mfaSecret", "mfaEnabled")
+       VALUES ('Owner', $1, $2, 'super_admin', true, true, true, true, now(), 1, $3, true)`,
+      [email, hash, secret],
     );
   });
   const [row] = await ds.query(`SELECT id FROM users WHERE email = $1`, [email]);
-  return { userId: row.id };
+  const mfaCode = () =>
+    otplibGenerateSync({ algorithm: 'sha1', digits: 6, period: 30, secret });
+  return { userId: row.id, mfaSecret: secret, mfaCode };
 }

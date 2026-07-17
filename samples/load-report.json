@@ -1,0 +1,20 @@
+{
+  "settings": {
+    "pagesPerCopy": 30,
+    "total": 50,
+    "concurrency": 10
+  },
+  "wallClockMs": 9820,
+  "throughputPerSec": "5.09",
+  "failures": 0,
+  "failureRate": "0.000",
+  "latencyMs": {
+    "min": 804,
+    "p50": 1934,
+    "p95": 2293,
+    "p99": 2819,
+    "max": 2819,
+    "avg": 1963
+  },
+  "peakRssMB": "322.0"
+}

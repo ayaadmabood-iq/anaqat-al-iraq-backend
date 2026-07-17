@@ -19,6 +19,7 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { UploadTransferDto } from './dto/upload-transfer.dto';
 import { FingerprintService } from '@/modules/fingerprint/fingerprint.service';
 import { AuditService } from '@/modules/audit/audit.service';
+import { MailService } from '@/modules/mail/mail.service';
 import { sniffAndValidate } from '@/modules/common/file-validators';
 
 function newOrderNumber(): string {
@@ -46,6 +47,7 @@ export class OrdersService {
     private readonly books: BooksService,
     private readonly fingerprint: FingerprintService,
     private readonly audit: AuditService,
+    private readonly mail: MailService,
   ) {}
 
   async create(user: User, dto: CreateOrderDto, ip?: string): Promise<Order> {
@@ -182,44 +184,54 @@ export class OrdersService {
   }
 
   async reissueForCustomer(user: User, orderId: string, ip?: string) {
-    const order = await this.orders.findOne({
-      where: { id: orderId, userId: user.id },
-      relations: ['book', 'user'],
-    });
-    if (!order) throw new NotFoundException();
-    if (order.status !== 'fulfilled') {
-      throw new BadRequestException(
-        'إعادة إنشاء النسخة متاحة فقط بعد اعتماد الطلب',
+    // Serialise reissue per order with a pg advisory lock. Two concurrent
+    // reissue requests execute strictly one after the other, so each gets a
+    // unique generation number in strict sequence (no unique-key racing).
+    return this.orders.manager.transaction(async (tx) => {
+      // hashtext returns an int; wrap in a stable pair for pg_advisory_xact_lock.
+      await tx.query(
+        `SELECT pg_advisory_xact_lock(hashtext('reissue:' || $1::text))`,
+        [orderId],
       );
-    }
-    const { copy, generation } = await this.fingerprint.issueCopyForOrder(
-      order,
-      order.book,
-      order.user,
-      { reason: 'reissue', triggeredByUserId: user.id },
-    );
-    await this.audit.record({
-      actorUserId: user.id,
-      actorRole: user.role,
-      action: 'copy.reissued',
-      entity: 'issued_copy',
-      entityId: copy.id,
-      metadata: {
-        orderNumber: order.orderNumber,
+      const order = await tx.getRepository(Order).findOne({
+        where: { id: orderId, userId: user.id },
+        relations: ['book', 'user'],
+      });
+      if (!order) throw new NotFoundException();
+      if (order.status !== 'fulfilled') {
+        throw new BadRequestException(
+          'إعادة إنشاء النسخة متاحة فقط بعد اعتماد الطلب',
+        );
+      }
+      const { copy, generation } = await this.fingerprint.issueCopyForOrder(
+        order,
+        order.book,
+        order.user,
+        { reason: 'reissue', triggeredByUserId: user.id },
+      );
+      await this.audit.record({
+        actorUserId: user.id,
+        actorRole: user.role,
+        action: 'copy.reissued',
+        entity: 'issued_copy',
+        entityId: copy.id,
+        metadata: {
+          orderNumber: order.orderNumber,
+          copyUuid: copy.copyUuid,
+          generationId: generation.generationId,
+          generationNumber: generation.generationNumber,
+          sha256: generation.fileSha256,
+        },
+        ipAddress: ip,
+      });
+      return {
+        ok: true,
         copyUuid: copy.copyUuid,
         generationId: generation.generationId,
         generationNumber: generation.generationNumber,
         sha256: generation.fileSha256,
-      },
-      ipAddress: ip,
+      };
     });
-    return {
-      ok: true,
-      copyUuid: copy.copyUuid,
-      generationId: generation.generationId,
-      generationNumber: generation.generationNumber,
-      sha256: generation.fileSha256,
-    };
   }
 
   /* ─── admin side ─── */
@@ -314,6 +326,15 @@ export class OrdersService {
       },
       ipAddress: ip,
     });
+
+    // Best-effort — do not block the approval on a mail hiccup.
+    this.mail
+      .sendOrderApprovedEmail({
+        to: order.user.email,
+        fullName: order.user.fullName,
+        orderNumber: order.orderNumber,
+      })
+      .catch(() => undefined);
 
     return {
       ok: true,

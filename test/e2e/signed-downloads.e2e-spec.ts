@@ -18,11 +18,11 @@ describe('signed short-TTL download URLs (E2E)', () => {
     process.env.DOWNLOAD_URL_TTL_SEC = '60';
     ({ app, ds } = await bootTestApp());
     ({ bookId } = await seedPublishedBook(ds, 'signed-book'));
-    await bootstrapOwner(ds, 'signed-owner@example.com');
+    const owner = await bootstrapOwner(ds, 'signed-owner@example.com');
     ownerToken = (
       await request(app.getHttpServer())
         .post('/api/v1/auth/login')
-        .send({ email: 'signed-owner@example.com', password: 'OwnerPassw0rd!' })
+        .send({ email: 'signed-owner@example.com', password: 'OwnerPassw0rd!', mfaCode: owner.mfaCode() })
         .expect(200)
     ).body.accessToken;
 

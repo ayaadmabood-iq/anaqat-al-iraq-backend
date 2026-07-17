@@ -1,0 +1,13 @@
+{
+  "pages": 301,
+  "masterBuildMs": 35587,
+  "masterSizeKB": "563.1",
+  "issueMs": 2110,
+  "pagesPerSecond": "142.7",
+  "outSizeKB": "816.3",
+  "peakRssMB": "307.6",
+  "rssDeltaMB": "7.3",
+  "diskSha256MatchesRecord": true,
+  "signatureValid": true,
+  "outPath": "/tmp/qasdiya-realistic-0jVl06/generated/perf-realistic/QSD-PERF-REALISTIC-de00aa4b-48f9-4327-bfc1-8a0ec860e2fe-g1.pdf"
+}

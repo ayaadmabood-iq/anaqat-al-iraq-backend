@@ -1,6 +1,7 @@
 import {
   Controller,
   ForbiddenException,
+  GoneException,
   Get,
   Headers,
   Ip,
@@ -27,6 +28,14 @@ import {
 } from '@/modules/auth/roles';
 import type { User } from '@/database';
 
+function isLegacyEnabled(): boolean {
+  if (process.env.NODE_ENV === 'production') {
+    return process.env.DOWNLOADS_LEGACY_ENDPOINT === 'on';
+  }
+  const v = process.env.DOWNLOADS_LEGACY_ENDPOINT;
+  return v !== 'off';
+}
+
 @Controller('downloads')
 export class DownloadsController {
   constructor(
@@ -36,22 +45,21 @@ export class DownloadsController {
 
   /**
    * Buyer requests a short-TTL signed link for the personal copy of an
-   * approved order. The returned URL can be sent to a download manager
-   * without carrying the buyer's JWT. The TTL (default 300s) is set by
-   * DOWNLOAD_URL_TTL_SEC.
+   * approved order. The returned URL is single-use and bound to the current
+   * generation — an admin reissue invalidates any outstanding link.
    */
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(...CUSTOMER_ROLES)
   @Post('order/:orderId/link')
   async issueLink(@CurrentUser() user: User, @Param('orderId') orderId: string) {
-    // Confirm ownership + fulfilled state before minting a link.
     await this.svc.assertDownloadableForUser(user, orderId);
     return this.links.issue(orderId, user.id);
   }
 
   /**
-   * Legacy JWT-authenticated download. Left in place for existing clients;
-   * new consumers should use `POST order/:orderId/link` + `GET signed?t=…`.
+   * Legacy JWT-authenticated download. Disabled in production by default
+   * (set DOWNLOADS_LEGACY_ENDPOINT=on to re-enable). Returns 410 Gone with
+   * Deprecation + Sunset headers when disabled.
    */
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(...CUSTOMER_ROLES)
@@ -63,13 +71,21 @@ export class DownloadsController {
     @Headers('user-agent') userAgent: string,
     @Res() res: Response,
   ) {
+    if (!isLegacyEnabled()) {
+      res.setHeader('Deprecation', 'true');
+      res.setHeader('Sunset', 'Tue, 31 Dec 2026 23:59:59 GMT');
+      res.setHeader('Link', '</api/v1/downloads/order/:orderId/link>; rel="successor-version"');
+      throw new GoneException(
+        'This endpoint is deprecated. Use POST /downloads/order/:orderId/link to obtain a signed short-TTL URL.',
+      );
+    }
     return this.serve(orderId, user.id, ip, userAgent, res);
   }
 
   /**
-   * Signed short-TTL endpoint. Anonymous — the signature IS the auth. We
-   * still look up the user + verify the copy exists to hydrate the download
-   * log.
+   * Signed short-TTL endpoint. Anonymous — the signature IS the auth. The
+   * token is single-use (a second GET returns 410) and bound to the current
+   * generation.
    */
   @Get('signed')
   async downloadSigned(
@@ -78,7 +94,8 @@ export class DownloadsController {
     @Headers('user-agent') userAgent: string,
     @Res() res: Response,
   ) {
-    const { orderId, userId } = this.links.verify(token);
+    // Consume BEFORE serving so replay is caught at the DB level.
+    const { orderId, userId } = await this.links.consume(token, ip);
     return this.serve(orderId, userId, ip, userAgent, res);
   }
 
@@ -98,7 +115,13 @@ export class DownloadsController {
     if (!fs.existsSync(absPath)) {
       throw new NotFoundException('generated file missing on disk');
     }
+    // §5 headers — never let a signed link leak via cache, referrer, or
+    // MIME sniffing.
     res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'no-store, private, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="${safeFilename(downloadFileName)}"`,

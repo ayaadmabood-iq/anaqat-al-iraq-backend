@@ -15,11 +15,11 @@ describe('purchase flow (E2E)', () => {
   beforeAll(async () => {
     ({ app, ds } = await bootTestApp());
     ({ bookId } = await seedPublishedBook(ds, 'e2e-book'));
-    await bootstrapOwner(ds);
+    const owner = await bootstrapOwner(ds);
 
     const login = await request(app.getHttpServer())
       .post('/api/v1/auth/login')
-      .send({ email: 'owner@example.com', password: 'OwnerPassw0rd!' })
+      .send({ email: 'owner@example.com', password: 'OwnerPassw0rd!', mfaCode: owner.mfaCode() })
       .expect(200);
     ownerToken = login.body.accessToken;
   });

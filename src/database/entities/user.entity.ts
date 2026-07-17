@@ -81,6 +81,22 @@ export class User {
   @Column({ type: 'integer', default: 1 })
   tokenVersion: number;
 
+  /**
+   * TOTP MFA is REQUIRED for the super_admin role and OPTIONAL for other
+   * admin-tier roles. Customers do not carry MFA. `mfaSecret` is a base32
+   * TOTP secret; `mfaEnabled` becomes true only after the user has proven
+   * they can generate a valid code. `mfaRecoveryCodesHash` is a
+   * comma-separated list of SHA-256 hashes of one-time recovery codes.
+   */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  mfaSecret: string | null;
+
+  @Column({ type: 'boolean', default: false })
+  mfaEnabled: boolean;
+
+  @Column({ type: 'text', nullable: true })
+  mfaRecoveryCodesHash: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 

@@ -24,11 +24,11 @@ describe('approve idempotency + concurrency (E2E)', () => {
   beforeAll(async () => {
     ({ app, ds } = await bootTestApp());
     ({ bookId } = await seedPublishedBook(ds, 'idem-book'));
-    await bootstrapOwner(ds, 'owner-idem@example.com');
+    const owner = await bootstrapOwner(ds, 'owner-idem@example.com');
     ownerToken = (
       await request(app.getHttpServer())
         .post('/api/v1/auth/login')
-        .send({ email: 'owner-idem@example.com', password: 'OwnerPassw0rd!' })
+        .send({ email: 'owner-idem@example.com', password: 'OwnerPassw0rd!', mfaCode: owner.mfaCode() })
         .expect(200)
     ).body.accessToken;
 
@@ -124,22 +124,19 @@ describe('approve idempotency + concurrency (E2E)', () => {
     expect(gens.c).toBe(1);
   });
 
-  it('reissue is safely serialisable — two concurrent reissue calls do not create three generations', async () => {
+  it('reissue is serialised by pg advisory lock — two concurrent calls produce EXACTLY two new generations, numbered 2 and 3', async () => {
+    // Prior tests already produced generation 1 (initial issue).
     const http = request(app.getHttpServer());
-    const [a, b] = await Promise.allSettled([
+    const [a, b] = await Promise.all([
       http.post(`/api/v1/orders/${orderId}/reissue-copy`)
         .set('Authorization', `Bearer ${buyerToken}`),
       http.post(`/api/v1/orders/${orderId}/reissue-copy`)
         .set('Authorization', `Bearer ${buyerToken}`),
     ]);
-    const codes = [a, b]
-      .filter((r): r is PromiseFulfilledResult<request.Response> => r.status === 'fulfilled')
-      .map((r) => r.value.status);
-    // One or both may succeed (the endpoint isn't strictly atomic — the
-    // service reads currentGenerationNumber then bumps it). The DB-side
-    // uniqueness on (issuedCopyId, generationNumber) fences duplicates:
-    // at most two rows should exist after both calls.
-    expect(codes.every((c) => c === 201 || c === 500)).toBe(true);
+    // Both must succeed (advisory lock serialises them; neither races).
+    expect([a.status, b.status].sort()).toEqual([201, 201]);
+    const numbers = [a.body.generationNumber, b.body.generationNumber].sort();
+    expect(numbers).toEqual([2, 3]);
 
     const [gens] = await ds.query(
       `SELECT count(*)::int AS c FROM issued_copy_generations g
@@ -147,9 +144,22 @@ describe('approve idempotency + concurrency (E2E)', () => {
        JOIN orders o ON o.id = c."orderId" WHERE o.id = $1`,
       [orderId],
     );
-    // The initial generation + at most one reissue that wins the unique
-    // constraint race.
-    expect(gens.c).toBeGreaterThanOrEqual(2);
-    expect(gens.c).toBeLessThanOrEqual(3);
+    // initial (gen 1) + two reissues (gen 2 + gen 3) = exactly 3.
+    expect(gens.c).toBe(3);
+
+    const rows = await ds.query(
+      `SELECT g."generationNumber", g."generationId", g."fileSha256"
+       FROM issued_copy_generations g
+       JOIN issued_copies c ON c.id = g."issuedCopyId"
+       JOIN orders o ON o.id = c."orderId"
+       WHERE o.id = $1 ORDER BY g."generationNumber"`,
+      [orderId],
+    );
+    const seenIds = new Set(rows.map((r: { generationId: string }) => r.generationId));
+    // Every generation id is distinct.
+    expect(seenIds.size).toBe(3);
+    // Every hash is distinct.
+    const seenHashes = new Set(rows.map((r: { fileSha256: string }) => r.fileSha256));
+    expect(seenHashes.size).toBe(3);
   });
 });

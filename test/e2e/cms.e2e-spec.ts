@@ -10,10 +10,10 @@ describe('CMS (E2E)', () => {
 
   beforeAll(async () => {
     ({ app, ds } = await bootTestApp());
-    await bootstrapOwner(ds, 'cms-owner@example.com');
+    const owner = await bootstrapOwner(ds, 'cms-owner@example.com');
     const login = await request(app.getHttpServer())
       .post('/api/v1/auth/login')
-      .send({ email: 'cms-owner@example.com', password: 'OwnerPassw0rd!' })
+      .send({ email: 'cms-owner@example.com', password: 'OwnerPassw0rd!', mfaCode: owner.mfaCode() })
       .expect(200);
     ownerToken = login.body.accessToken;
   });

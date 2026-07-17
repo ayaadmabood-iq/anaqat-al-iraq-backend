@@ -11,6 +11,8 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
+import { MfaService } from './mfa/mfa.service';
+import { MfaController } from './mfa/mfa.controller';
 
 @Module({
   imports: [
@@ -27,8 +29,8 @@ import { RolesGuard } from './guards/roles.guard';
       }),
     }),
   ],
-  controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RolesGuard],
+  controllers: [AuthController, MfaController],
+  providers: [AuthService, JwtStrategy, RolesGuard, MfaService],
   exports: [AuthService, JwtModule, RolesGuard],
 })
 export class AuthModule {}

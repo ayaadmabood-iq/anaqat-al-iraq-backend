@@ -25,6 +25,7 @@ import {
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { MailService } from '@/modules/mail/mail.service';
 import { AuditService } from '@/modules/audit/audit.service';
+import { MfaService } from './mfa/mfa.service';
 
 function hashToken(plain: string): string {
   return createHash('sha256').update(plain, 'utf8').digest('hex');
@@ -53,6 +54,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly mail: MailService,
     private readonly audit: AuditService,
+    private readonly mfa: MfaService,
   ) {}
 
   private bcryptRounds() {
@@ -174,6 +176,17 @@ export class AuthService {
     if (!ok) throw new UnauthorizedException('بيانات الدخول غير صحيحة');
     if (!user.emailVerified) {
       throw new UnauthorizedException('يرجى تأكيد البريد الإلكتروني أولاً');
+    }
+
+    // A super_admin MUST have MFA before it is allowed to log in. Other
+    // accounts pass through only the MFA check for enabled users.
+    if (this.mfa.isRequired(user) && !user.mfaEnabled) {
+      throw new UnauthorizedException(
+        'MFA required for super_admin: enrol via /auth/mfa/setup + /auth/mfa/enable using a temporary session bootstrapped by the owner script',
+      );
+    }
+    if (user.mfaEnabled) {
+      await this.mfa.challenge(user, dto.mfaCode || '', ip);
     }
 
     const accessToken = await this.signJwt(user);

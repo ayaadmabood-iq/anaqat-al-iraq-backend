@@ -8,13 +8,22 @@ module.exports = {
   moduleFileExtensions: ['ts', 'js', 'json'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    // otplib publishes ESM-first via package "exports"; force the CJS build
+    // for Jest across every import site.
+    '^otplib$': '<rootDir>/node_modules/otplib/dist/index.cjs',
+    '^otplib/(.*)$': '<rootDir>/node_modules/otplib/dist/$1.cjs',
   },
+  // Prefer the `require` conditional export map (Jest 29+).
+  testEnvironmentOptions: { customExportConditions: ['node', 'require'] },
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json', isolatedModules: true }],
     '^.+\\.js$': ['ts-jest', { tsconfig: 'tsconfig.json', isolatedModules: true, useESM: false }],
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(sanitize-html|htmlparser2|domhandler|domutils|domelementtype|entities|parse-srcset|postcss)/)',
+    // Whitelist packages that ship ESM-only in node_modules so ts-jest
+    // transforms them into CJS before Jest evaluates. otplib and its
+    // @otplib/@scure/@noble transitive deps all publish ESM.
+    'node_modules/(?!(sanitize-html|htmlparser2|domhandler|domutils|domelementtype|entities|parse-srcset|postcss|@scure|@noble|otplib|@otplib)/)',
   ],
   collectCoverageFrom: [
     'src/**/*.ts',

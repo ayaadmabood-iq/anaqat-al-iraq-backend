@@ -88,14 +88,14 @@ jobs:
           name: coverage
           path: coverage/
 
-      - name: npm audit (production only)
-        run: npm audit --omit=dev --audit-level=none
-        continue-on-error: true
+      - name: Audit gate (blocks Critical / unlisted High)
+        run: npm run audit-gate
 
-      - name: Advisory decision log check
+      - name: Advisory decision log present
         run: |
           test -f docs/SECURITY-ADVISORIES.md
-          echo "advisory decision log present"
+          test -f .audit-allowlist.json
+          echo "advisory decision log + allowlist present"
 
       - name: Bootstrap owner + backup restore drill (smoke)
         env:
