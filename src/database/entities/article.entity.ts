@@ -31,6 +31,19 @@ export class Article {
   @Column({ type: 'varchar', length: 200, nullable: true })
   authorDisplay: string | null;
 
+  /** Free-text category slug (IRPB file 2 §9). Kept lightweight for MVP. */
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  category: string | null;
+
+  @Column({ type: 'text', array: true, default: () => "ARRAY[]::text[]" })
+  tags: string[];
+
+  @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
+  metaTitle: LocalizedText;
+
+  @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
+  metaDescription: LocalizedText;
+
   @Column({ type: 'varchar', length: 16, default: 'draft' })
   status: ArticleStatus;
 

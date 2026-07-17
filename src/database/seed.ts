@@ -7,6 +7,7 @@ import {
   ALL_ENTITIES,
   BankAccount,
   Book,
+  BookCategory,
   Setting,
   User,
 } from './index';
@@ -28,7 +29,7 @@ async function main() {
   await ds.initialize();
   console.log('▶ connected');
 
-  /* ─── Bootstrap admin ─────────────────────────────── */
+  /* ─── Bootstrap super_admin (IRPB file 3 §7) ─────── */
   const users = ds.getRepository(User);
   const adminEmail = (process.env.ADMIN_EMAIL || 'admin@qasdiya.local').toLowerCase();
   let admin = await users.findOne({ where: { email: adminEmail } });
@@ -41,7 +42,7 @@ async function main() {
         process.env.ADMIN_PASSWORD || 'change-me-now',
         rounds,
       ),
-      role: 'admin',
+      role: 'super_admin',
       preferredLang: 'ar',
       emailVerified: true,
       isActive: true,
@@ -50,12 +51,16 @@ async function main() {
       acceptedAt: new Date(),
     });
     await users.save(admin);
-    console.log(`✔ admin created: ${adminEmail}`);
+    console.log(`✔ super_admin created: ${adminEmail}`);
+  } else if (admin.role === 'admin') {
+    admin.role = 'super_admin';
+    await users.save(admin);
+    console.log(`↺ upgraded legacy admin → super_admin: ${adminEmail}`);
   } else {
     console.log(`• admin already present: ${adminEmail}`);
   }
 
-  /* ─── Launch bank accounts (Rafidain + TBI) ───────── */
+  /* ─── Launch bank accounts (Rafidain + TBI-IQD + TBI-USD, IRPB file 2 §10) ─── */
   const banks = ds.getRepository(BankAccount);
   const seedBanks = [
     {
@@ -67,11 +72,19 @@ async function main() {
       notes: 'يرجى ذكر رقم الطلب في حقل الملاحظات عند الحوالة.',
     },
     {
-      bankName: 'Trade Bank of Iraq (TBI)',
+      bankName: 'Trade Bank of Iraq (TBI) — IQD',
+      accountHolder: 'د. إياد محمد عبود',
+      accountNumber: '0000000000',
+      currency: 'IQD',
+      displayOrder: 2,
+      notes: 'حساب TBI بالدينار العراقي.',
+    },
+    {
+      bankName: 'Trade Bank of Iraq (TBI) — USD',
       accountHolder: 'Dr. Iyad Muhammad Abood',
       accountNumber: '0000000000',
       currency: 'USD',
-      displayOrder: 2,
+      displayOrder: 3,
       notes: 'Please include the order number in the transfer memo.',
     },
   ];
@@ -83,6 +96,47 @@ async function main() {
       await banks.save(banks.create(b));
       console.log(`✔ seeded bank account: ${b.bankName}`);
     }
+  }
+
+  /* ─── Book categories ─────────────────────────────── */
+  const categories = ds.getRepository(BookCategory);
+  const seedCategories = [
+    {
+      slug: 'quranic-studies',
+      name: { ar: 'الدراسات القرآنية', en: 'Qurʾānic Studies' },
+      description: {
+        ar: 'أعمال قصدية تتناول القرآن كما يعرّف نفسه.',
+        en: 'Purposive works engaging the Qurʾān as it defines itself.',
+      },
+      displayOrder: 1,
+    },
+    {
+      slug: 'human-studies',
+      name: { ar: 'الدراسات الإنسانية', en: 'Humanities' },
+      description: {
+        ar: 'الإنسان والوجود والقيم من منظور قرآني.',
+        en: 'The human being, existence, and values from a Qurʾānic vantage.',
+      },
+      displayOrder: 2,
+    },
+    {
+      slug: 'critique-of-modernity',
+      name: { ar: 'نقد الحداثة', en: 'Critique of Modernity' },
+      description: {
+        ar: 'مساءلة قرآنية للأفكار والمذاهب المعاصرة.',
+        en: 'A Qurʾānic interrogation of contemporary ideas and doctrines.',
+      },
+      displayOrder: 3,
+    },
+  ];
+  const categoryBySlug = new Map<string, BookCategory>();
+  for (const c of seedCategories) {
+    let row = await categories.findOne({ where: { slug: c.slug } });
+    if (!row) {
+      row = await categories.save(categories.create(c));
+      console.log(`✔ seeded category: ${c.slug}`);
+    }
+    categoryBySlug.set(c.slug, row);
   }
 
   /* ─── Launch books (§3) ───────────────────────────── */
@@ -102,6 +156,10 @@ async function main() {
       priceUsd: '15.00',
       priceIqd: '20000',
       masterPdfPath: 'min-teen-wa-nafkha/master.pdf',
+      samplePdfPath: 'min-teen-wa-nafkha/sample.pdf',
+      categorySlug: 'human-studies',
+      keywords: ['الإنسان', 'الخلق', 'النفخة', 'الطين', 'التكوين'],
+      isFeatured: true,
     },
     {
       slug: 'hiwar-al-quran-maa-al-gharb',
@@ -117,6 +175,10 @@ async function main() {
       priceUsd: '18.00',
       priceIqd: '24000',
       masterPdfPath: 'hiwar-al-quran-maa-al-gharb/master.pdf',
+      samplePdfPath: 'hiwar-al-quran-maa-al-gharb/sample.pdf',
+      categorySlug: 'critique-of-modernity',
+      keywords: ['الغرب', 'الحداثة', 'حوار', 'العلمانية', 'الحرية'],
+      isFeatured: true,
     },
     {
       slug: 'al-siraa-al-wujudi-lil-insan',
@@ -132,10 +194,15 @@ async function main() {
       priceUsd: '17.00',
       priceIqd: '22000',
       masterPdfPath: 'al-siraa-al-wujudi-lil-insan/master.pdf',
+      samplePdfPath: 'al-siraa-al-wujudi-lil-insan/sample.pdf',
+      categorySlug: 'quranic-studies',
+      keywords: ['إبليس', 'الشياطين', 'الوجود', 'الابتلاء'],
+      isFeatured: false,
     },
   ];
   for (const b of launchBooks) {
     const exists = await books.findOne({ where: { slug: b.slug } });
+    const cat = categoryBySlug.get(b.categorySlug);
     if (!exists) {
       await books.save(
         books.create({
@@ -144,8 +211,12 @@ async function main() {
           author: b.author,
           description: b.description,
           masterPdfPath: b.masterPdfPath,
+          samplePdfPath: b.samplePdfPath,
           priceUsd: b.priceUsd,
           priceIqd: b.priceIqd,
+          keywords: b.keywords,
+          isFeatured: b.isFeatured,
+          categoryId: cat?.id ?? null,
           status: 'published',
           publishedAt: new Date(),
         }),
@@ -154,7 +225,7 @@ async function main() {
     }
   }
 
-  /* ─── Settings: agreement text, contact info ──────── */
+  /* ─── Settings & CMS pages ────────────────────────── */
   const settings = ds.getRepository(Setting);
   const defaults: Record<string, unknown> = {
     'purchase.agreement': {
@@ -166,13 +237,80 @@ async function main() {
         'republished or redistributed by any means, and that every copy ' +
         'carries a unique fingerprint identifying me.',
     },
-    'contact.info': {
-      email: 'contact@qasdiya.local',
-      whatsapp: null,
-    },
+    'contact.info': { email: 'contact@qasdiya.local', whatsapp: null },
     'platform.owner': {
       ar: 'د. إياد محمد عبود',
       en: 'Dr. Iyad Muhammad Abood',
+    },
+    'page.home_hero': {
+      ar: {
+        title: 'منصة القراءة القصدية',
+        tagline: 'القرآن… كما يعرّف نفسه',
+        cta: 'ابدأ الاستكشاف',
+      },
+      en: {
+        title: 'The Purposive Reading Platform',
+        tagline: 'The Qurʾān — as it defines itself.',
+        cta: 'Start exploring',
+      },
+    },
+    'page.about': {
+      ar: {
+        title: 'عن المنصة',
+        body:
+          'منصة معرفية مستقلة للنشر والبحث والدراسات القرآنية والإنسانية، ' +
+          'تعتمد منهج القراءة القصدية.',
+      },
+      en: {
+        title: 'About the Platform',
+        body:
+          'An independent knowledge platform for publishing, research, and ' +
+          'Qurʾānic and human studies grounded in the purposive-reading method.',
+      },
+    },
+    'page.founder': {
+      ar: {
+        title: 'عن المؤسس',
+        body: 'الدكتور إياد محمد عبود — مؤسس منصة القراءة القصدية.',
+      },
+      en: {
+        title: 'About the Founder',
+        body: 'Dr. Iyad Muhammad Abood — founder of the Purposive Reading Platform.',
+      },
+    },
+    'page.faq': {
+      ar: [
+        {
+          q: 'كيف أشتري كتاباً؟',
+          a: 'أنشئ حساباً، اختر الكتاب، وافق على الاتفاقية، ثم حوّل قيمته وارفع صورة الحوالة. بعد المراجعة ستُتاح لك نسخة شخصية للتنزيل.',
+        },
+        {
+          q: 'ما الفرق بين النسخة الشخصية والنسخة الأصلية؟',
+          a: 'النسخة الشخصية تحمل اسمك وبريدك ورقم طلبك وبصمة رقمية فريدة، ولا يجوز إعادة نشرها.',
+        },
+      ],
+      en: [
+        {
+          q: 'How do I buy a book?',
+          a: 'Create an account, choose the book, accept the purchase agreement, then transfer the price and upload the transfer proof. Once reviewed, a personal copy becomes available for download.',
+        },
+        {
+          q: 'What is the difference between the personal and master copies?',
+          a: 'Your personal copy carries your name, e-mail, order number, and a unique digital fingerprint. Redistribution is prohibited.',
+        },
+      ],
+    },
+    'page.contact': {
+      ar: {
+        title: 'تواصل معنا',
+        email: 'contact@qasdiya.local',
+        note: 'يسعدنا استقبال استفساراتكم واقتراحاتكم.',
+      },
+      en: {
+        title: 'Contact us',
+        email: 'contact@qasdiya.local',
+        note: 'We welcome your questions and suggestions.',
+      },
     },
   };
   for (const [key, value] of Object.entries(defaults)) {
@@ -188,6 +326,7 @@ async function main() {
   console.log('');
   console.log('Storage layout expected:');
   console.log('  ' + path.join(process.env.STORAGE_ROOT || 'storage', 'books', '<slug>', 'master.pdf'));
+  console.log('  ' + path.join(process.env.STORAGE_ROOT || 'storage', 'books', '<slug>', 'sample.pdf'));
 }
 
 main().catch((err) => {

@@ -13,14 +13,20 @@ import { ArticlesService } from './articles.service';
 import { CreateArticleDto, UpdateArticleDto } from './dto/save-article.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { Roles } from '@/modules/auth/decorators/roles.decorator';
+import { CONTENT_ADMIN } from '@/modules/auth/roles';
 
 @Controller('articles')
 export class PublicArticlesController {
   constructor(private readonly svc: ArticlesService) {}
 
   @Get()
-  list(@Query('lang') lang = 'ar') {
-    return this.svc.listPublic(lang);
+  list(
+    @Query('lang') lang = 'ar',
+    @Query('q') q?: string,
+    @Query('category') category?: string,
+    @Query('tag') tag?: string,
+  ) {
+    return this.svc.listPublic({ lang, q, category, tag });
   }
 
   @Get(':slug')
@@ -30,7 +36,7 @@ export class PublicArticlesController {
 }
 
 @UseGuards(JwtAuthGuard)
-@Roles('admin')
+@Roles(...CONTENT_ADMIN)
 @Controller('admin/articles')
 export class AdminArticlesController {
   constructor(private readonly svc: ArticlesService) {}

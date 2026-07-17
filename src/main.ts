@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
+import helmet from 'helmet';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -13,6 +14,14 @@ async function bootstrap() {
     const dir = path.join(storageRoot, sub);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   }
+
+  // Security headers — IRPB file 3 §8 (XSS / clickjacking / mime sniffing).
+  app.use(
+    helmet({
+      contentSecurityPolicy: false, // frontend is served separately
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
 
   app.enableCors({
     origin: process.env.CORS_ORIGIN || '*',

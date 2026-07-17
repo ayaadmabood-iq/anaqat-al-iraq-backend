@@ -9,6 +9,13 @@ import { Article } from '@/database';
 import { pickLocalized } from '@/modules/books/books.service';
 import { CreateArticleDto, UpdateArticleDto } from './dto/save-article.dto';
 
+export interface PublicArticleQuery {
+  lang: string;
+  q?: string;
+  category?: string;
+  tag?: string;
+}
+
 @Injectable()
 export class ArticlesService {
   constructor(
@@ -23,16 +30,34 @@ export class ArticlesService {
       excerpt: pickLocalized(a.excerpt, lang),
       body: includeBody ? pickLocalized(a.body, lang) : undefined,
       authorDisplay: a.authorDisplay,
+      category: a.category,
+      tags: a.tags,
+      meta: includeBody
+        ? {
+            title: pickLocalized(a.metaTitle, lang),
+            description: pickLocalized(a.metaDescription, lang),
+          }
+        : undefined,
       publishedAt: a.publishedAt,
     };
   }
 
-  async listPublic(lang: string) {
-    const rows = await this.repo.find({
-      where: { status: 'published' },
-      order: { publishedAt: 'DESC' },
-    });
-    return rows.map((a) => this.toPublic(a, lang, false));
+  async listPublic(query: PublicArticleQuery) {
+    const qb = this.repo
+      .createQueryBuilder('a')
+      .where('a.status = :s', { s: 'published' });
+    if (query.category) qb.andWhere('a.category = :cat', { cat: query.category });
+    if (query.tag) qb.andWhere(':tag = ANY(a.tags)', { tag: query.tag });
+    if (query.q) {
+      const term = `%${query.q.trim()}%`;
+      qb.andWhere(
+        `(a.title::text ILIKE :term OR a.excerpt::text ILIKE :term OR a.body::text ILIKE :term)`,
+        { term },
+      );
+    }
+    qb.orderBy('a.publishedAt', 'DESC');
+    const rows = await qb.getMany();
+    return rows.map((a) => this.toPublic(a, query.lang, false));
   }
 
   async getPublic(slug: string, lang: string) {
@@ -54,6 +79,10 @@ export class ArticlesService {
       excerpt: dto.excerpt ?? {},
       body: dto.body,
       authorDisplay: dto.authorDisplay ?? null,
+      category: dto.category ?? null,
+      tags: dto.tags ?? [],
+      metaTitle: dto.metaTitle ?? {},
+      metaDescription: dto.metaDescription ?? {},
       status: dto.status ?? 'draft',
       publishedAt: dto.status === 'published' ? new Date() : null,
     });

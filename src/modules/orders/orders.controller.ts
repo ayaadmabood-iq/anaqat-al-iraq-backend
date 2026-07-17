@@ -11,6 +11,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import { randomUUID } from 'crypto';
@@ -20,6 +21,11 @@ import { UploadTransferDto } from './dto/upload-transfer.dto';
 import { RejectOrderDto } from './dto/review-order.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { Roles } from '@/modules/auth/decorators/roles.decorator';
+import {
+  ANY_ADMIN,
+  CUSTOMER_ROLES,
+  FINANCE_ADMIN,
+} from '@/modules/auth/roles';
 import { CurrentUser } from '@/modules/auth/decorators/current-user.decorator';
 import type { User } from '@/database';
 
@@ -37,6 +43,7 @@ const transferStorage = diskStorage({
 });
 
 @UseGuards(JwtAuthGuard)
+@Roles(...CUSTOMER_ROLES)
 @Controller('orders')
 export class OrdersController {
   constructor(private readonly svc: OrdersService) {}
@@ -56,6 +63,7 @@ export class OrdersController {
     return this.svc.getMine(user, id);
   }
 
+  @Throttle({ upload: { limit: 5, ttl: 60_000 } })
   @Post(':id/transfer-proof')
   @UseInterceptors(
     FileInterceptor('file', {
@@ -77,29 +85,41 @@ export class OrdersController {
   ) {
     return this.svc.attachTransferProof(user, id, dto, file, ip);
   }
+
+  /**
+   * IRPB file 4 §7 — "إعادة إنشاء نسختي": buyer can request a fresh PDF for
+   * the same UUID and buyer fingerprint after losing the file.
+   */
+  @Post(':id/reissue-copy')
+  reissue(@CurrentUser() user: User, @Param('id') id: string, @Ip() ip: string) {
+    return this.svc.reissueForCustomer(user, id, ip);
+  }
 }
 
 @UseGuards(JwtAuthGuard)
-@Roles('admin')
 @Controller('admin/orders')
 export class AdminOrdersController {
   constructor(private readonly svc: OrdersService) {}
 
+  @Roles(...ANY_ADMIN)
   @Get()
-  list(@Query('status') status?: string) {
-    return this.svc.listForAdmin(status);
+  list(@Query('status') status?: string, @Query('q') q?: string) {
+    return this.svc.listForAdmin(status, q);
   }
 
+  @Roles(...ANY_ADMIN)
   @Get(':id')
   detail(@Param('id') id: string) {
     return this.svc.getForAdmin(id);
   }
 
+  @Roles(...FINANCE_ADMIN)
   @Post(':id/approve')
   approve(@CurrentUser() admin: User, @Param('id') id: string, @Ip() ip: string) {
     return this.svc.approve(admin, id, ip);
   }
 
+  @Roles(...FINANCE_ADMIN)
   @Post(':id/reject')
   reject(
     @CurrentUser() admin: User,

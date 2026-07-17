@@ -3,11 +3,14 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  JoinColumn,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import { Order } from './order.entity';
+import { BookCategory } from './book-category.entity';
 
 export type BookStatus = 'draft' | 'published' | 'suspended';
 
@@ -19,6 +22,7 @@ export type BookStatus = 'draft' | 'published' | 'suspended';
 export type LocalizedText = { [langCode: string]: string };
 
 @Entity('books')
+@Index('idx_books_status_featured', ['status', 'isFeatured'])
 export class Book {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -46,6 +50,21 @@ export class Book {
   @Column({ type: 'varchar', length: 500 })
   masterPdfPath: string;
 
+  /**
+   * IRPB file 4 §3 — "إصدار الكتاب" is injected into the fingerprint. Bump
+   * this string every time you re-upload masterPdfPath so old and new copies
+   * can be told apart.
+   */
+  @Column({ type: 'varchar', length: 32, default: '1' })
+  editionVersion: string;
+
+  /**
+   * Public sample PDF (§9 file 2, §6 file 5). Anyone can download it without
+   * an account. Path is relative to STORAGE_ROOT/books.
+   */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  samplePdfPath: string | null;
+
   @Column({ type: 'integer', default: 0 })
   pageCount: number;
 
@@ -54,6 +73,25 @@ export class Book {
 
   @Column({ type: 'numeric', precision: 12, scale: 2, nullable: true })
   priceIqd: string | null;
+
+  /**
+   * Free-form searchable keywords ("كلمات مفتاحية" — file 2 §8).
+   */
+  @Column({ type: 'text', array: true, default: () => "ARRAY[]::text[]" })
+  keywords: string[];
+
+  @Column({ type: 'uuid', nullable: true })
+  categoryId: string | null;
+
+  @ManyToOne(() => BookCategory, (c) => c.books, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'categoryId' })
+  category: BookCategory | null;
+
+  @Column({ type: 'boolean', default: false })
+  isFeatured: boolean;
 
   @Column({ type: 'varchar', length: 16, default: 'draft' })
   status: BookStatus;

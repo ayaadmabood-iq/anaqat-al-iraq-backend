@@ -15,6 +15,7 @@ import {
 } from './dto/save-bank-account.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { Roles } from '@/modules/auth/decorators/roles.decorator';
+import { FINANCE_ADMIN } from '@/modules/auth/roles';
 
 @UseGuards(JwtAuthGuard)
 @Controller('bank-accounts')
@@ -28,7 +29,7 @@ export class BankAccountsController {
 }
 
 @UseGuards(JwtAuthGuard)
-@Roles('admin')
+@Roles(...FINANCE_ADMIN)
 @Controller('admin/bank-accounts')
 export class AdminBankAccountsController {
   constructor(private readonly svc: BankAccountsService) {}

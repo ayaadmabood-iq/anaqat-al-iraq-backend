@@ -9,6 +9,9 @@ import {
 } from 'typeorm';
 import { IssuedCopy } from './issued-copy.entity';
 
+/**
+ * Per-download log (IRPB file 4 §6): date, IP, browser, OS, UUID, order#.
+ */
 @Entity('download_logs')
 export class DownloadLog {
   @PrimaryGeneratedColumn('uuid')
@@ -30,6 +33,12 @@ export class DownloadLog {
 
   @Column({ type: 'varchar', length: 500, nullable: true })
   userAgent: string | null;
+
+  @Column({ type: 'varchar', length: 60, nullable: true })
+  browser: string | null;
+
+  @Column({ type: 'varchar', length: 60, nullable: true })
+  os: string | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   downloadedAt: Date;

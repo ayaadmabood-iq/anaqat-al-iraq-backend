@@ -1,10 +1,13 @@
 import {
+  IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsNumberString,
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
   Matches,
   Min,
@@ -29,9 +32,15 @@ export class CreateBookDto {
   @IsString()
   masterPdfPath: string;
 
-  @IsOptional()
-  @IsString()
-  coverImagePath?: string;
+  @IsOptional() @IsString() editionVersion?: string;
+  @IsOptional() @IsString() samplePdfPath?: string;
+  @IsOptional() @IsString() coverImagePath?: string;
+
+  @IsOptional() @IsUUID() categoryId?: string;
+
+  @IsOptional() @IsArray() keywords?: string[];
+
+  @IsOptional() @IsBoolean() isFeatured?: boolean;
 
   @IsOptional()
   @IsInt()

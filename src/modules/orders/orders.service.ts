@@ -171,14 +171,59 @@ export class OrdersService {
     return { ok: true, orderStatus: order.status };
   }
 
+  /**
+   * IRPB file 4 §7 — customer reissue endpoint. Only fulfilled orders qualify;
+   * the copy keeps the same UUID and fingerprint payload, only a new file and
+   * hash are produced.
+   */
+  async reissueForCustomer(user: User, orderId: string, ip?: string) {
+    const order = await this.orders.findOne({
+      where: { id: orderId, userId: user.id },
+      relations: ['book', 'user'],
+    });
+    if (!order) throw new NotFoundException();
+    if (order.status !== 'fulfilled') {
+      throw new BadRequestException(
+        'إعادة إنشاء النسخة متاحة فقط بعد اعتماد الطلب',
+      );
+    }
+    const copy = await this.fingerprint.issueCopyForOrder(
+      order,
+      order.book,
+      order.user,
+      { reissue: true },
+    );
+    await this.audit.record({
+      actorUserId: user.id,
+      actorRole: user.role,
+      action: 'copy.reissued',
+      entity: 'issued_copy',
+      entityId: copy.id,
+      metadata: { orderNumber: order.orderNumber, copyUuid: copy.copyUuid },
+      ipAddress: ip,
+    });
+    return { ok: true, copyUuid: copy.copyUuid, sha256: copy.fileSha256 };
+  }
+
   /* ─── admin side ─── */
 
-  async listForAdmin(status?: string) {
-    return this.orders.find({
-      where: status ? { status: status as Order['status'] } : {},
-      order: { createdAt: 'DESC' },
-      relations: ['user', 'book', 'transferProofs', 'issuedCopy'],
-    });
+  async listForAdmin(status?: string, q?: string) {
+    const qb = this.orders
+      .createQueryBuilder('o')
+      .leftJoinAndSelect('o.user', 'u')
+      .leftJoinAndSelect('o.book', 'b')
+      .leftJoinAndSelect('o.transferProofs', 'p')
+      .leftJoinAndSelect('o.issuedCopy', 'c')
+      .orderBy('o.createdAt', 'DESC');
+    if (status) qb.andWhere('o.status = :st', { st: status });
+    if (q) {
+      const term = `%${q.trim()}%`;
+      qb.andWhere(
+        `(o.orderNumber ILIKE :t OR u.email ILIKE :t OR u.fullName ILIKE :t)`,
+        { t: term },
+      );
+    }
+    return qb.getMany();
   }
 
   async getForAdmin(id: string) {

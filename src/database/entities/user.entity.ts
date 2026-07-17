@@ -10,7 +10,22 @@ import {
 import { Order } from './order.entity';
 import { IssuedCopy } from './issued-copy.entity';
 
-export type UserRole = 'user' | 'admin';
+/**
+ * RBAC per IRPB file 3 §7. The MVP-critical roles are `super_admin` (owner)
+ * and `customer` (default for signup); the other four are recognised in the
+ * schema so the founder can create staff accounts without a redeploy.
+ *
+ * `admin` and `user` are kept as legacy aliases and behave as `super_admin`
+ * and `customer` respectively.
+ */
+export type UserRole =
+  | 'super_admin'
+  | 'admin'
+  | 'content_manager'
+  | 'finance_manager'
+  | 'support'
+  | 'customer'
+  | 'user';
 
 @Entity('users')
 export class User {
@@ -39,7 +54,7 @@ export class User {
   @Column({ type: 'varchar', length: 8, default: 'ar' })
   preferredLang: 'ar' | 'en';
 
-  @Column({ type: 'varchar', length: 16, default: 'user' })
+  @Column({ type: 'varchar', length: 24, default: 'customer' })
   role: UserRole;
 
   @Column({ type: 'boolean', default: false })

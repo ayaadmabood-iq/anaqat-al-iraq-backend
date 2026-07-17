@@ -131,16 +131,23 @@ storage/
 | POST   | `/auth/register`              | تسجيل مستخدم جديد (يرسل رابط تحقق)            |
 | GET    | `/auth/verify?token=…`        | تأكيد البريد                                  |
 | POST   | `/auth/login`                 | دخول (يُرجع JWT)                              |
+| POST   | `/auth/forgot-password`       | طلب رابط استعادة (لا يُفصح عن وجود الحساب)   |
+| POST   | `/auth/reset-password`        | إعادة تعيين كلمة المرور بالتوكن               |
+| POST   | `/auth/change-password`       | تغيير كلمة المرور للحساب المسجَّل            |
 | GET    | `/auth/me`                    | بيانات المستخدم الحالي                        |
+| PATCH  | `/auth/me`                    | تعديل الملف الشخصي                            |
 
-### الكتب والمقالات (عامة)
+### الكتب والمقالات والتصنيفات والمحتوى (عامة)
 
-| الطريقة | المسار                        | الوصف                                        |
-|--------|-------------------------------|-----------------------------------------------|
-| GET    | `/books?lang=ar`              | قائمة الكتب المنشورة                          |
-| GET    | `/books/:slug?lang=ar`        | تفاصيل كتاب                                   |
-| GET    | `/articles?lang=ar`           | قائمة المقالات المنشورة                       |
-| GET    | `/articles/:slug?lang=ar`     | قراءة مقال                                    |
+| الطريقة | المسار                                              | الوصف                                        |
+|--------|-----------------------------------------------------|-----------------------------------------------|
+| GET    | `/books?lang=&q=&category=&featured=`               | قائمة الكتب المنشورة (بحث/تصنيف/مميز)         |
+| GET    | `/books/:slug?lang=ar`                              | تفاصيل كتاب                                   |
+| GET    | `/books/:slug/sample`                               | تنزيل المقدمة المجانية (PDF)                  |
+| GET    | `/book-categories?lang=ar`                          | التصنيفات المنشورة                            |
+| GET    | `/articles?lang=&q=&category=&tag=`                 | قائمة المقالات المنشورة                       |
+| GET    | `/articles/:slug?lang=ar`                           | قراءة مقال (مع SEO meta)                      |
+| GET    | `/content/:key`                                     | صفحات CMS (home_hero/about/founder/faq/contact) |
 
 ### الحسابات المصرفية (للمستخدم عند الشراء)
 
@@ -156,6 +163,7 @@ storage/
 | GET    | `/orders`                                 | طلبات المستخدم                               |
 | GET    | `/orders/:id`                             | تفاصيل طلب                                   |
 | POST   | `/orders/:id/transfer-proof` (multipart)  | رفع صورة الحوالة (image/pdf ≤ 8MB)          |
+| POST   | `/orders/:id/reissue-copy`                | إعادة إنشاء النسخة الشخصية بنفس UUID       |
 
 ### التنزيل
 
@@ -167,18 +175,27 @@ storage/
 
 | الطريقة | المسار                                    | الوصف                                       |
 |--------|-------------------------------------------|----------------------------------------------|
-| GET    | `/admin/summary`                          | ملخص المنصة                                  |
-| GET    | `/admin/reports/sales?from=&to=`          | تقرير المبيعات                               |
-| GET    | `/admin/lookup/copy/:uuid`                | البحث بواسطة UUID (§10)                     |
-| GET/POST/PATCH `/admin/books`             |                                              | إدارة الكتب                                   |
-| POST   | `/admin/books/:id/publish` / `/suspend`   | نشر أو إيقاف كتاب                            |
-| GET/POST/PATCH/DELETE `/admin/articles`   |                                              | إدارة المقالات                                |
-| GET/POST/PATCH/DELETE `/admin/bank-accounts` |                                          | إدارة حسابات الحوالة                          |
-| GET    | `/admin/orders?status=…`                  | كل الطلبات                                   |
-| POST   | `/admin/orders/:id/approve`               | اعتماد الطلب → يُولِّد النسخة الشخصية       |
-| POST   | `/admin/orders/:id/reject`                | رفض الطلب مع ذكر السبب                       |
-| GET/POST `/admin/customers`               |                                              | العملاء (بحث/تفعيل/تعطيل)                    |
-| GET    | `/admin/downloads`                        | آخر عمليات التنزيل                          |
+| GET    | `/admin/summary`                                    | ملخص المنصة                                  |
+| GET    | `/admin/reports/sales?from=&to=`                    | تقرير المبيعات (finance_manager)             |
+| GET    | `/admin/reports/best-selling?limit=10`              | الكتب الأكثر مبيعاً                          |
+| GET    | `/admin/reports/pending-orders`                     | الطلبات المعلقة                              |
+| GET    | `/admin/lookup/copy/:uuid`                          | بحث سريع بالـUUID                            |
+| GET    | `/admin/lookup/copy/:uuid/report`                   | تقرير فني كامل (§10 من ملف Publishing Engine) |
+| GET    | `/admin/lookup/copies?buyer=&order=`                | بحث بالنسخ باسم المشتري أو رقم الطلب         |
+| GET/POST/PATCH `/admin/books`                       |                                              | إدارة الكتب                                   |
+| POST   | `/admin/books/:id/publish` / `/suspend`             | نشر أو إيقاف كتاب                            |
+| GET/POST/PATCH/DELETE `/admin/book-categories`      |                                              | إدارة التصنيفات                               |
+| GET/POST/PATCH/DELETE `/admin/articles`             |                                              | إدارة المقالات                                |
+| GET/PUT/DELETE `/admin/content/:key`                |                                              | إدارة صفحات CMS                              |
+| GET/POST/PATCH/DELETE `/admin/bank-accounts`        |                                              | إدارة حسابات الحوالة                          |
+| GET    | `/admin/orders?status=&q=`                          | كل الطلبات مع بحث نصي                        |
+| POST   | `/admin/orders/:id/approve`                         | اعتماد الطلب → يُولِّد النسخة الشخصية       |
+| POST   | `/admin/orders/:id/reject`                          | رفض الطلب مع ذكر السبب                       |
+| GET/POST `/admin/customers`                         |                                              | العملاء (بحث/تفعيل/تعطيل)                    |
+| GET    | `/admin/downloads?limit=`                           | آخر عمليات التنزيل                          |
+
+راجع [`docs/RBAC.md`](./docs/RBAC.md) لأي من الأدوار الست يستطيع الوصول
+إلى كل نقطة.
 
 ---
 
@@ -225,10 +242,18 @@ GET /downloads/order/:orderId  (يُسجَّل في DownloadLog + AuditLog)
 
 ---
 
-## الأدوار
+## الأدوار (RBAC)
 
-- `user` — يستطيع التصفح، الشراء، رفع الحوالة، والتنزيل بعد الاعتماد.
-- `admin` — كل نقاط `/admin/*`. يُنشأ افتراضياً عبر `npm run seed`.
+المرجع التأسيسي IRPB §7 يعرّف ستة أدوار:
+
+- `super_admin` — صاحب المنصة (يُنشأ افتراضياً عبر `npm run seed`).
+- `admin` — مدير عام.
+- `content_manager` — كتب، مقالات، تصنيفات، CMS.
+- `finance_manager` — طلبات، حسابات مصرفية، تقارير مالية.
+- `support` — قراءة العملاء والنسخ والتقارير الفنية.
+- `customer` (افتراضي) — الشراء والتنزيل.
+
+انظر [`docs/RBAC.md`](./docs/RBAC.md) للمصفوفة الكاملة.
 
 ---
 
@@ -263,6 +288,14 @@ GET /downloads/order/:orderId  (يُسجَّل في DownloadLog + AuditLog)
 - **v4** — دار نشر رقمية، مؤلفون، مؤتمرات، مركز أبحاث.
 
 ---
+
+## وثائق مرفقة
+
+- [`docs/CONSTITUTION.md`](./docs/CONSTITUTION.md) — دستور المنصة (IRPB §8) وقائمة التسليم.
+- [`docs/RBAC.md`](./docs/RBAC.md) — الأدوار الستة ومصفوفة الصلاحيات.
+- [`docs/OPERATIONS.md`](./docs/OPERATIONS.md) — دليل التشغيل الإداري اليومي.
+- [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) — نشر VPS + Nginx + systemd + TLS + بريد.
+- [`docs/BACKUP.md`](./docs/BACKUP.md) — نسخ احتياطية يومية/أسبوعية/شهرية + Restore drill.
 
 ## الرخصة
 

@@ -8,6 +8,7 @@ import { Repository } from 'typeorm';
 import { DownloadLog, IssuedCopy, Order, User } from '@/database';
 import { FingerprintService } from '@/modules/fingerprint/fingerprint.service';
 import { AuditService } from '@/modules/audit/audit.service';
+import { parseUserAgent } from './user-agent';
 
 @Injectable()
 export class DownloadsService {
@@ -19,7 +20,12 @@ export class DownloadsService {
     private readonly audit: AuditService,
   ) {}
 
-  async prepareDownload(user: User, orderId: string, ip: string | undefined) {
+  async prepareDownload(
+    user: User,
+    orderId: string,
+    ip: string | undefined,
+    userAgent: string | undefined,
+  ) {
     const order = await this.orders.findOne({
       where: { id: orderId, userId: user.id },
     });
@@ -35,11 +41,15 @@ export class DownloadsService {
     const absPath = this.fingerprint.absolutePathFor(copy);
     const downloadFileName = `${copy.book.slug}-${copy.copyUuid}.pdf`;
 
+    const { browser, os } = parseUserAgent(userAgent);
     await this.logs.save(
       this.logs.create({
         issuedCopyId: copy.id,
         userId: user.id,
         ipAddress: ip ?? null,
+        userAgent: userAgent ?? null,
+        browser,
+        os,
       }),
     );
     await this.audit.record({
@@ -48,7 +58,12 @@ export class DownloadsService {
       action: 'copy.downloaded',
       entity: 'issued_copy',
       entityId: copy.id,
-      metadata: { orderNumber: order.orderNumber, copyUuid: copy.copyUuid },
+      metadata: {
+        orderNumber: order.orderNumber,
+        copyUuid: copy.copyUuid,
+        browser,
+        os,
+      },
       ipAddress: ip,
     });
 
