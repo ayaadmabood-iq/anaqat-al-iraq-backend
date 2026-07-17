@@ -15,6 +15,7 @@ import {
   UpdateCategoryDto,
 } from './dto/save-category.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '@/modules/auth/guards/roles.guard';
 import { Roles } from '@/modules/auth/decorators/roles.decorator';
 import { CONTENT_ADMIN } from '@/modules/auth/roles';
 
@@ -28,7 +29,7 @@ export class PublicBookCategoriesController {
   }
 }
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(...CONTENT_ADMIN)
 @Controller('admin/book-categories')
 export class AdminBookCategoriesController {

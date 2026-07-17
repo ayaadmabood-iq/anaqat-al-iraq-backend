@@ -10,16 +10,27 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
 
   const storageRoot = process.env.STORAGE_ROOT || path.join(process.cwd(), 'storage');
-  for (const sub of ['books', 'generated', 'transfers']) {
+  for (const sub of ['books', 'generated', 'transfers', 'keys']) {
     const dir = path.join(storageRoot, sub);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o750 });
   }
 
-  // Security headers — IRPB file 3 §8 (XSS / clickjacking / mime sniffing).
+  // Security headers — IRPB file 3 §8. The frontend is served separately by
+  // Nginx; here we set the API-side CSP that matters (no browser will actually
+  // render this content, but the header still blocks a curious admin who
+  // opens a JSON response directly).
   app.use(
     helmet({
-      contentSecurityPolicy: false, // frontend is served separately
-      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+          baseUri: ["'none'"],
+          formAction: ["'none'"],
+        },
+      },
+      crossOriginResourcePolicy: { policy: 'same-origin' },
+      referrerPolicy: { policy: 'no-referrer' },
     }),
   );
 

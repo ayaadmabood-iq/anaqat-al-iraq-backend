@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as path from 'path';
 import {
   Order,
   OrderTransferProof,
@@ -18,9 +19,9 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { UploadTransferDto } from './dto/upload-transfer.dto';
 import { FingerprintService } from '@/modules/fingerprint/fingerprint.service';
 import { AuditService } from '@/modules/audit/audit.service';
+import { sniffAndValidate } from '@/modules/common/file-validators';
 
 function newOrderNumber(): string {
-  // QSD-YYYYMMDD-XXXXXX — reads as "قصدية" order and stays URL-safe.
   const d = new Date();
   const ymd =
     d.getFullYear().toString() +
@@ -113,6 +114,7 @@ export class OrdersService {
       approvedAt: o.approvedAt,
       fulfilledAt: o.fulfilledAt,
       canDownload: o.status === 'fulfilled' && !!o.issuedCopy,
+      currentGenerationNumber: o.issuedCopy?.currentGenerationNumber ?? null,
     };
   }
 
@@ -141,6 +143,14 @@ export class OrdersService {
       });
       if (!bank) throw new BadRequestException('حساب مصرفي غير معروف');
     }
+
+    // Defence in depth — check the actual bytes on disk before accepting.
+    const uploadedAbs = path.join(
+      process.env.TRANSFERS_DIR ||
+        path.join(process.env.STORAGE_ROOT || path.join(process.cwd(), 'storage'), 'transfers'),
+      file.filename,
+    );
+    await sniffAndValidate(uploadedAbs, file.mimetype);
 
     const proof = this.proofs.create({
       orderId: order.id,
@@ -171,11 +181,6 @@ export class OrdersService {
     return { ok: true, orderStatus: order.status };
   }
 
-  /**
-   * IRPB file 4 §7 — customer reissue endpoint. Only fulfilled orders qualify;
-   * the copy keeps the same UUID and fingerprint payload, only a new file and
-   * hash are produced.
-   */
   async reissueForCustomer(user: User, orderId: string, ip?: string) {
     const order = await this.orders.findOne({
       where: { id: orderId, userId: user.id },
@@ -187,11 +192,11 @@ export class OrdersService {
         'إعادة إنشاء النسخة متاحة فقط بعد اعتماد الطلب',
       );
     }
-    const copy = await this.fingerprint.issueCopyForOrder(
+    const { copy, generation } = await this.fingerprint.issueCopyForOrder(
       order,
       order.book,
       order.user,
-      { reissue: true },
+      { reason: 'reissue', triggeredByUserId: user.id },
     );
     await this.audit.record({
       actorUserId: user.id,
@@ -199,10 +204,22 @@ export class OrdersService {
       action: 'copy.reissued',
       entity: 'issued_copy',
       entityId: copy.id,
-      metadata: { orderNumber: order.orderNumber, copyUuid: copy.copyUuid },
+      metadata: {
+        orderNumber: order.orderNumber,
+        copyUuid: copy.copyUuid,
+        generationId: generation.generationId,
+        generationNumber: generation.generationNumber,
+        sha256: generation.fileSha256,
+      },
       ipAddress: ip,
     });
-    return { ok: true, copyUuid: copy.copyUuid, sha256: copy.fileSha256 };
+    return {
+      ok: true,
+      copyUuid: copy.copyUuid,
+      generationId: generation.generationId,
+      generationNumber: generation.generationNumber,
+      sha256: generation.fileSha256,
+    };
   }
 
   /* ─── admin side ─── */
@@ -251,10 +268,11 @@ export class OrdersService {
     order.approvedByUserId = admin.id;
     await this.orders.save(order);
 
-    const copy = await this.fingerprint.issueCopyForOrder(
+    const { copy, generation } = await this.fingerprint.issueCopyForOrder(
       order,
       order.book,
       order.user,
+      { reason: 'initial', triggeredByUserId: admin.id },
     );
 
     order.status = 'fulfilled';
@@ -263,15 +281,63 @@ export class OrdersService {
 
     await this.audit.record({
       actorUserId: admin.id,
-      actorRole: 'admin',
+      actorRole: admin.role,
       action: 'order.approved',
       entity: 'order',
       entityId: order.id,
-      metadata: { copyUuid: copy.copyUuid, hash: copy.fileSha256 },
+      metadata: {
+        copyUuid: copy.copyUuid,
+        generationId: generation.generationId,
+        generationNumber: generation.generationNumber,
+        sha256: generation.fileSha256,
+      },
       ipAddress: ip,
     });
 
-    return { ok: true, orderStatus: order.status, copyUuid: copy.copyUuid };
+    return {
+      ok: true,
+      orderStatus: order.status,
+      copyUuid: copy.copyUuid,
+      generationId: generation.generationId,
+      generationNumber: generation.generationNumber,
+    };
+  }
+
+  async adminReissue(admin: User, orderId: string, ip?: string) {
+    const order = await this.orders.findOne({
+      where: { id: orderId },
+      relations: ['book', 'user'],
+    });
+    if (!order) throw new NotFoundException();
+    if (order.status !== 'fulfilled') {
+      throw new BadRequestException('لا يمكن إعادة إصدار طلب غير مُنفَّذ');
+    }
+    const { copy, generation } = await this.fingerprint.issueCopyForOrder(
+      order,
+      order.book,
+      order.user,
+      { reason: 'admin_reissue', triggeredByUserId: admin.id },
+    );
+    await this.audit.record({
+      actorUserId: admin.id,
+      actorRole: admin.role,
+      action: 'copy.admin_reissued',
+      entity: 'issued_copy',
+      entityId: copy.id,
+      metadata: {
+        orderNumber: order.orderNumber,
+        copyUuid: copy.copyUuid,
+        generationId: generation.generationId,
+        generationNumber: generation.generationNumber,
+      },
+      ipAddress: ip,
+    });
+    return {
+      ok: true,
+      copyUuid: copy.copyUuid,
+      generationId: generation.generationId,
+      generationNumber: generation.generationNumber,
+    };
   }
 
   async reject(admin: User, orderId: string, reason: string, ip?: string) {
@@ -286,7 +352,7 @@ export class OrdersService {
 
     await this.audit.record({
       actorUserId: admin.id,
-      actorRole: 'admin',
+      actorRole: admin.role,
       action: 'order.rejected',
       entity: 'order',
       entityId: order.id,

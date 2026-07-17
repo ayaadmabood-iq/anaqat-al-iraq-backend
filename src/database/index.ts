@@ -8,9 +8,12 @@ export { BankAccount } from './entities/bank-account.entity';
 export { Order, OrderStatus } from './entities/order.entity';
 export { OrderTransferProof } from './entities/order-transfer-proof.entity';
 export { IssuedCopy } from './entities/issued-copy.entity';
+export { IssuedCopyGeneration } from './entities/issued-copy-generation.entity';
 export { DownloadLog } from './entities/download-log.entity';
 export { AuditLog } from './entities/audit-log.entity';
 export { Setting } from './entities/setting.entity';
+export { ContentPage } from './entities/content-page.entity';
+export { ContentPageVersion } from './entities/content-page-version.entity';
 
 import { User } from './entities/user.entity';
 import { EmailVerificationToken } from './entities/email-verification-token.entity';
@@ -22,9 +25,12 @@ import { BankAccount } from './entities/bank-account.entity';
 import { Order } from './entities/order.entity';
 import { OrderTransferProof } from './entities/order-transfer-proof.entity';
 import { IssuedCopy } from './entities/issued-copy.entity';
+import { IssuedCopyGeneration } from './entities/issued-copy-generation.entity';
 import { DownloadLog } from './entities/download-log.entity';
 import { AuditLog } from './entities/audit-log.entity';
 import { Setting } from './entities/setting.entity';
+import { ContentPage } from './entities/content-page.entity';
+import { ContentPageVersion } from './entities/content-page-version.entity';
 
 export const ALL_ENTITIES = [
   User,
@@ -37,7 +43,10 @@ export const ALL_ENTITIES = [
   Order,
   OrderTransferProof,
   IssuedCopy,
+  IssuedCopyGeneration,
   DownloadLog,
   AuditLog,
   Setting,
+  ContentPage,
+  ContentPageVersion,
 ];

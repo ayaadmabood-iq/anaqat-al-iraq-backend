@@ -6,6 +6,10 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
+/**
+ * Same principle as PasswordResetToken: only the hash is stored, single-use,
+ * time-limited.
+ */
 @Entity('email_verification_tokens')
 export class EmailVerificationToken {
   @PrimaryGeneratedColumn('uuid')
@@ -16,8 +20,8 @@ export class EmailVerificationToken {
   userId: string;
 
   @Index({ unique: true })
-  @Column({ type: 'varchar', length: 128 })
-  token: string;
+  @Column({ type: 'varchar', length: 64 })
+  tokenHash: string;
 
   @Column({ type: 'timestamptz' })
   expiresAt: Date;

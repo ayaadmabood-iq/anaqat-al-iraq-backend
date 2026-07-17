@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Setting } from '@/database';
+import { ContentPage, ContentPageVersion } from '@/database';
 import { ContentService } from './content.service';
 import {
   AdminContentController,
@@ -8,7 +8,7 @@ import {
 } from './content.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Setting])],
+  imports: [TypeOrmModule.forFeature([ContentPage, ContentPageVersion])],
   providers: [ContentService],
   controllers: [PublicContentController, AdminContentController],
   exports: [ContentService],

@@ -1,19 +1,24 @@
 import 'reflect-metadata';
 import * as dotenv from 'dotenv';
 import { DataSource } from 'typeorm';
-import * as bcrypt from 'bcrypt';
 import * as path from 'path';
 import {
   ALL_ENTITIES,
   BankAccount,
   Book,
   BookCategory,
+  ContentPage,
   Setting,
-  User,
 } from './index';
 
 dotenv.config();
 
+/**
+ * Data seeder — safe to run in any environment. Does NOT create the owner
+ * account; that lives in the migration-gated bootstrap
+ * (`npm run bootstrap:owner`) so the runtime application cannot promote itself
+ * to super_admin.
+ */
 async function main() {
   const ds = new DataSource({
     type: 'postgres',
@@ -23,44 +28,15 @@ async function main() {
     password: process.env.DB_PASSWORD || 'postgres',
     database: process.env.DB_DATABASE || 'qasdiya_platform',
     entities: ALL_ENTITIES,
-    synchronize: true,
+    migrations: [path.join(__dirname, 'migrations', '*{.ts,.js}')],
+    migrationsRun: true, // ensure schema is present
+    synchronize: false,
     logging: false,
   });
   await ds.initialize();
-  console.log('▶ connected');
+  console.log('▶ connected — migrations run');
 
-  /* ─── Bootstrap super_admin (IRPB file 3 §7) ─────── */
-  const users = ds.getRepository(User);
-  const adminEmail = (process.env.ADMIN_EMAIL || 'admin@qasdiya.local').toLowerCase();
-  let admin = await users.findOne({ where: { email: adminEmail } });
-  if (!admin) {
-    const rounds = parseInt(process.env.BCRYPT_ROUNDS || '12', 10);
-    admin = users.create({
-      fullName: process.env.ADMIN_FULL_NAME || 'المدير العام',
-      email: adminEmail,
-      passwordHash: await bcrypt.hash(
-        process.env.ADMIN_PASSWORD || 'change-me-now',
-        rounds,
-      ),
-      role: 'super_admin',
-      preferredLang: 'ar',
-      emailVerified: true,
-      isActive: true,
-      privacyAccepted: true,
-      termsAccepted: true,
-      acceptedAt: new Date(),
-    });
-    await users.save(admin);
-    console.log(`✔ super_admin created: ${adminEmail}`);
-  } else if (admin.role === 'admin') {
-    admin.role = 'super_admin';
-    await users.save(admin);
-    console.log(`↺ upgraded legacy admin → super_admin: ${adminEmail}`);
-  } else {
-    console.log(`• admin already present: ${adminEmail}`);
-  }
-
-  /* ─── Launch bank accounts (Rafidain + TBI-IQD + TBI-USD, IRPB file 2 §10) ─── */
+  /* ─── Bank accounts (Rafidain + TBI-IQD + TBI-USD, IRPB file 2 §10) ─── */
   const banks = ds.getRepository(BankAccount);
   const seedBanks = [
     {
@@ -225,9 +201,9 @@ async function main() {
     }
   }
 
-  /* ─── Settings & CMS pages ────────────────────────── */
+  /* ─── Non-page settings (agreement, contact, owner) ─── */
   const settings = ds.getRepository(Setting);
-  const defaults: Record<string, unknown> = {
+  const settingDefaults: Record<string, unknown> = {
     'purchase.agreement': {
       ar:
         'أوافق على أن النسخة التي سأتسلّمها نسخة شخصية لا يجوز نشرها أو ' +
@@ -242,6 +218,18 @@ async function main() {
       ar: 'د. إياد محمد عبود',
       en: 'Dr. Iyad Muhammad Abood',
     },
+  };
+  for (const [key, value] of Object.entries(settingDefaults)) {
+    const exists = await settings.findOne({ where: { key } });
+    if (!exists) {
+      await settings.save(settings.create({ key, value }));
+      console.log(`✔ seeded setting: ${key}`);
+    }
+  }
+
+  /* ─── CMS pages (versioned) ────────────────────────── */
+  const pages = ds.getRepository(ContentPage);
+  const pageDefaults: Record<string, unknown> = {
     'page.home_hero': {
       ar: {
         title: 'منصة القراءة القصدية',
@@ -313,17 +301,26 @@ async function main() {
       },
     },
   };
-  for (const [key, value] of Object.entries(defaults)) {
-    const exists = await settings.findOne({ where: { key } });
+  for (const [key, value] of Object.entries(pageDefaults)) {
+    const exists = await pages.findOne({ where: { key } });
     if (!exists) {
-      await settings.save(settings.create({ key, value }));
-      console.log(`✔ seeded setting: ${key}`);
+      await pages.save(
+        pages.create({
+          key,
+          draftValue: value,
+          publishedValue: value,
+          publishedAt: new Date(),
+          version: 1,
+        }),
+      );
+      console.log(`✔ seeded page: ${key}`);
     }
   }
 
   await ds.destroy();
   console.log('▶ done');
   console.log('');
+  console.log('Owner account: run `npm run bootstrap:owner` (see docs/RBAC.md).');
   console.log('Storage layout expected:');
   console.log('  ' + path.join(process.env.STORAGE_ROOT || 'storage', 'books', '<slug>', 'master.pdf'));
   console.log('  ' + path.join(process.env.STORAGE_ROOT || 'storage', 'books', '<slug>', 'sample.pdf'));

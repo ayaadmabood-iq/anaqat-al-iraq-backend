@@ -12,7 +12,9 @@ import {
 import type { Response } from 'express';
 import * as fs from 'fs';
 import { DownloadsService } from './downloads.service';
+import { safeFilename } from '@/modules/common/safe-path';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '@/modules/auth/guards/roles.guard';
 import { CurrentUser } from '@/modules/auth/decorators/current-user.decorator';
 import { Roles } from '@/modules/auth/decorators/roles.decorator';
 import {
@@ -21,7 +23,7 @@ import {
 } from '@/modules/auth/roles';
 import type { User } from '@/database';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('downloads')
 export class DownloadsController {
   constructor(private readonly svc: DownloadsService) {}
@@ -46,13 +48,13 @@ export class DownloadsController {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="${downloadFileName}"`,
+      `attachment; filename="${safeFilename(downloadFileName)}"`,
     );
     fs.createReadStream(absPath).pipe(res);
   }
 }
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(...ANY_ADMIN)
 @Controller('admin/downloads')
 export class AdminDownloadsController {

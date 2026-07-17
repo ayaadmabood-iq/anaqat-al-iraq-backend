@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -8,7 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import {
   EmailVerificationToken,
   PasswordResetToken,
@@ -25,12 +26,28 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { MailService } from '@/modules/mail/mail.service';
 import { AuditService } from '@/modules/audit/audit.service';
 
+function hashToken(plain: string): string {
+  return createHash('sha256').update(plain, 'utf8').digest('hex');
+}
+
+/**
+ * Constant-time equality on hex strings of the same length. Guards the
+ * token-hash lookup against timing side channels even though we already
+ * hash both sides.
+ */
+function safeHexEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  const ab = Buffer.from(a, 'utf8');
+  const bb = Buffer.from(b, 'utf8');
+  return timingSafeEqual(ab, bb);
+}
+
 @Injectable()
 export class AuthService {
   constructor(
     @InjectRepository(User) private readonly users: Repository<User>,
     @InjectRepository(EmailVerificationToken)
-    private readonly tokens: Repository<EmailVerificationToken>,
+    private readonly emailTokens: Repository<EmailVerificationToken>,
     @InjectRepository(PasswordResetToken)
     private readonly resets: Repository<PasswordResetToken>,
     private readonly jwt: JwtService,
@@ -40,6 +57,15 @@ export class AuthService {
 
   private bcryptRounds() {
     return parseInt(process.env.BCRYPT_ROUNDS || '12', 10);
+  }
+
+  private signJwt(user: User) {
+    return this.jwt.signAsync({
+      sub: user.id,
+      role: user.role,
+      email: user.email,
+      tv: user.tokenVersion ?? 1,
+    });
   }
 
   async register(dto: RegisterDto, ip?: string) {
@@ -63,12 +89,16 @@ export class AuthService {
       country: dto.country ?? null,
       city: dto.city ?? null,
       preferredLang: dto.preferredLang ?? 'ar',
+      // Runtime signup is ALWAYS a customer. Role escalation is only allowed
+      // through the migration-gated bootstrap path (see docs/RBAC.md and
+      // migrations/*RoleHardening*.ts).
       role: 'customer',
       emailVerified: false,
       isActive: true,
       privacyAccepted: true,
       termsAccepted: true,
       acceptedAt: new Date(),
+      tokenVersion: 1,
     });
     await this.users.save(user);
 
@@ -87,26 +117,37 @@ export class AuthService {
   }
 
   async issueVerificationToken(user: User) {
-    const token = randomBytes(48).toString('hex');
+    const plain = randomBytes(48).toString('hex');
     const expires = new Date(Date.now() + 1000 * 60 * 60 * 48); // 48h
-    await this.tokens.save(
-      this.tokens.create({ userId: user.id, token, expiresAt: expires }),
+    await this.emailTokens.save(
+      this.emailTokens.create({
+        userId: user.id,
+        tokenHash: hashToken(plain),
+        expiresAt: expires,
+      }),
     );
     await this.mail.sendVerificationEmail({
       to: user.email,
       fullName: user.fullName,
-      token,
+      token: plain,
     });
   }
 
   async verifyEmail(token: string) {
-    if (!token) throw new BadRequestException('missing token');
-    const row = await this.tokens.findOne({ where: { token } });
+    if (!token || typeof token !== 'string') {
+      throw new BadRequestException('missing token');
+    }
+    const row = await this.emailTokens.findOne({
+      where: { tokenHash: hashToken(token) },
+    });
     if (!row || row.consumedAt || row.expiresAt < new Date()) {
       throw new BadRequestException('رابط التحقق غير صالح أو انتهت صلاحيته');
     }
+    if (!safeHexEqual(row.tokenHash, hashToken(token))) {
+      throw new BadRequestException('invalid token');
+    }
     row.consumedAt = new Date();
-    await this.tokens.save(row);
+    await this.emailTokens.save(row);
 
     const user = await this.users.findOne({ where: { id: row.userId } });
     if (!user) throw new BadRequestException('user missing');
@@ -135,11 +176,7 @@ export class AuthService {
       throw new UnauthorizedException('يرجى تأكيد البريد الإلكتروني أولاً');
     }
 
-    const accessToken = await this.jwt.signAsync({
-      sub: user.id,
-      role: user.role,
-      email: user.email,
-    });
+    const accessToken = await this.signJwt(user);
 
     await this.audit.record({
       actorUserId: user.id,
@@ -163,19 +200,19 @@ export class AuthService {
   }
 
   /**
-   * IRPB file 2 §5 — "استعادة كلمة المرور". We always return `ok: true` so
-   * callers cannot use the endpoint to enumerate registered addresses.
+   * Always returns `{ ok: true }` regardless of whether the address exists —
+   * prevents account enumeration. Rate-limited at the controller.
    */
   async forgotPassword(dto: ForgotPasswordDto, ip?: string) {
     const emailLc = dto.email.toLowerCase().trim();
     const user = await this.users.findOne({ where: { email: emailLc } });
     if (user && user.isActive) {
-      const token = randomBytes(48).toString('hex');
+      const plain = randomBytes(48).toString('hex');
       const expires = new Date(Date.now() + 1000 * 60 * 60); // 1h
       await this.resets.save(
         this.resets.create({
           userId: user.id,
-          token,
+          tokenHash: hashToken(plain),
           expiresAt: expires,
           requestIp: ip ?? null,
         }),
@@ -183,7 +220,7 @@ export class AuthService {
       await this.mail.sendPasswordResetEmail({
         to: user.email,
         fullName: user.fullName,
-        token,
+        token: plain,
       });
       await this.audit.record({
         actorUserId: user.id,
@@ -198,15 +235,34 @@ export class AuthService {
   }
 
   async resetPassword(dto: ResetPasswordDto, ip?: string) {
-    const row = await this.resets.findOne({ where: { token: dto.token } });
+    if (!dto.token || typeof dto.token !== 'string') {
+      throw new BadRequestException('missing token');
+    }
+    const row = await this.resets.findOne({
+      where: { tokenHash: hashToken(dto.token) },
+    });
     if (!row || row.consumedAt || row.expiresAt < new Date()) {
       throw new BadRequestException('رابط الاستعادة غير صالح أو انتهت صلاحيته');
+    }
+    if (!safeHexEqual(row.tokenHash, hashToken(dto.token))) {
+      throw new BadRequestException('invalid token');
     }
     const user = await this.users.findOne({ where: { id: row.userId } });
     if (!user) throw new BadRequestException('user missing');
 
     user.passwordHash = await bcrypt.hash(dto.newPassword, this.bcryptRounds());
+    user.tokenVersion = (user.tokenVersion ?? 1) + 1;
     row.consumedAt = new Date();
+
+    // Best-effort cleanup: every other outstanding reset for this user is
+    // consumed too, so a link sent earlier cannot still be redeemed.
+    await this.resets
+      .createQueryBuilder()
+      .update()
+      .set({ consumedAt: new Date() })
+      .where('userId = :uid AND consumedAt IS NULL', { uid: user.id })
+      .execute();
+
     await this.resets.save(row);
     await this.users.save(user);
 
@@ -216,6 +272,7 @@ export class AuthService {
       action: 'user.password_reset_completed',
       entity: 'user',
       entityId: user.id,
+      metadata: { tokenVersion: user.tokenVersion },
       ipAddress: ip,
     });
     return { ok: true };
@@ -230,6 +287,7 @@ export class AuthService {
       );
     }
     user.passwordHash = await bcrypt.hash(dto.newPassword, this.bcryptRounds());
+    user.tokenVersion = (user.tokenVersion ?? 1) + 1;
     await this.users.save(user);
     await this.audit.record({
       actorUserId: user.id,
@@ -243,6 +301,11 @@ export class AuthService {
   }
 
   async updateProfile(user: User, dto: UpdateProfileDto, ip?: string) {
+    // Role is never touchable through the runtime API — see the schema-level
+    // guardrail in migrations/*RoleHardening*.ts.
+    if ('role' in (dto as Record<string, unknown>)) {
+      throw new ForbiddenException('role changes are not permitted here');
+    }
     if (dto.fullName !== undefined) user.fullName = dto.fullName.trim();
     if (dto.phone !== undefined) user.phone = dto.phone;
     if (dto.country !== undefined) user.country = dto.country;

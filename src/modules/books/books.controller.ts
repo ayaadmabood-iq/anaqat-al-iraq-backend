@@ -17,8 +17,10 @@ import { BooksService } from './books.service';
 import { CreateBookDto } from './dto/create-book.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '@/modules/auth/guards/roles.guard';
 import { Roles } from '@/modules/auth/decorators/roles.decorator';
 import { CONTENT_ADMIN } from '@/modules/auth/roles';
+import { safeFilename, safeJoin } from '@/modules/common/safe-path';
 
 function booksSourceDir() {
   return (
@@ -59,20 +61,18 @@ export class PublicBooksController {
   @Get(':slug/sample')
   async sample(@Param('slug') slug: string, @Res() res: Response) {
     const { book, samplePath } = await this.svc.getSampleAbsPath(slug);
-    const abs = path.isAbsolute(samplePath)
-      ? samplePath
-      : path.join(booksSourceDir(), samplePath);
+    const abs = safeJoin(booksSourceDir(), samplePath);
     if (!fs.existsSync(abs)) throw new NotFoundException();
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `inline; filename="${book.slug}-sample.pdf"`,
+      `inline; filename="${safeFilename(`${book.slug}-sample.pdf`)}"`,
     );
     fs.createReadStream(abs).pipe(res);
   }
 }
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(...CONTENT_ADMIN)
 @Controller('admin/books')
 export class AdminBooksController {

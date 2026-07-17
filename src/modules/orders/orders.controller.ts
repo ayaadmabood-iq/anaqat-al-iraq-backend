@@ -20,6 +20,7 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { UploadTransferDto } from './dto/upload-transfer.dto';
 import { RejectOrderDto } from './dto/review-order.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '@/modules/auth/guards/roles.guard';
 import { Roles } from '@/modules/auth/decorators/roles.decorator';
 import {
   ANY_ADMIN,
@@ -27,6 +28,11 @@ import {
   FINANCE_ADMIN,
 } from '@/modules/auth/roles';
 import { CurrentUser } from '@/modules/auth/decorators/current-user.decorator';
+import {
+  TRANSFER_MAX_BYTES,
+  assertTransferExtension,
+  isTransferMimeAllowed,
+} from '@/modules/common/file-validators';
 import type { User } from '@/database';
 
 const transferStorage = diskStorage({
@@ -37,12 +43,14 @@ const transferStorage = diskStorage({
     cb(null, dir);
   },
   filename: (_req, file, cb) => {
-    const ext = extname(file.originalname || '').toLowerCase();
-    cb(null, `${randomUUID()}${ext || '.bin'}`);
+    // Never trust the client-supplied name in the on-disk filename.
+    // We keep only the extension after validating it.
+    const ext = extname(file.originalname || '').toLowerCase().slice(0, 8);
+    cb(null, `${randomUUID()}${ext.match(/^\.[a-z0-9]{1,7}$/) ? ext : '.bin'}`);
   },
 });
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(...CUSTOMER_ROLES)
 @Controller('orders')
 export class OrdersController {
@@ -68,11 +76,17 @@ export class OrdersController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: transferStorage,
-      limits: { fileSize: 8 * 1024 * 1024 },
+      limits: { fileSize: TRANSFER_MAX_BYTES },
       fileFilter: (_req, file, cb) => {
-        const ok = /^image\/(png|jpe?g|webp)$|^application\/pdf$/.test(file.mimetype);
-        if (!ok) cb(new Error('file type not allowed'), false);
-        else cb(null, true);
+        try {
+          assertTransferExtension(file.originalname);
+          if (!isTransferMimeAllowed(file.mimetype)) {
+            return cb(new Error('نوع الملف غير مسموح'), false);
+          }
+          cb(null, true);
+        } catch (e) {
+          cb(e as Error, false);
+        }
       },
     }),
   )
@@ -86,17 +100,13 @@ export class OrdersController {
     return this.svc.attachTransferProof(user, id, dto, file, ip);
   }
 
-  /**
-   * IRPB file 4 §7 — "إعادة إنشاء نسختي": buyer can request a fresh PDF for
-   * the same UUID and buyer fingerprint after losing the file.
-   */
   @Post(':id/reissue-copy')
   reissue(@CurrentUser() user: User, @Param('id') id: string, @Ip() ip: string) {
     return this.svc.reissueForCustomer(user, id, ip);
   }
 }
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('admin/orders')
 export class AdminOrdersController {
   constructor(private readonly svc: OrdersService) {}
@@ -128,5 +138,15 @@ export class AdminOrdersController {
     @Ip() ip: string,
   ) {
     return this.svc.reject(admin, id, dto.reason, ip);
+  }
+
+  @Roles(...FINANCE_ADMIN)
+  @Post(':id/admin-reissue-copy')
+  adminReissue(
+    @CurrentUser() admin: User,
+    @Param('id') id: string,
+    @Ip() ip: string,
+  ) {
+    return this.svc.adminReissue(admin, id, ip);
   }
 }

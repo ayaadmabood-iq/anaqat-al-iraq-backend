@@ -98,25 +98,41 @@ storage/
 
 ## متغيرات البيئة
 
-| المتغير               | افتراضي                | الوصف                                                       |
-|-----------------------|------------------------|-------------------------------------------------------------|
-| `PORT`                | `3000`                 | منفذ HTTP                                                   |
-| `DB_HOST/PORT/…`      | localhost/5432         | إعداد PostgreSQL                                             |
-| `DB_DATABASE`         | `qasdiya_platform`     | اسم قاعدة البيانات                                          |
-| `JWT_SECRET`          | —                      | سرّ توقيع JWT (غيّره قبل النشر)                             |
-| `JWT_EXPIRES_IN`      | `7d`                   | عمر التوكن                                                  |
-| `BCRYPT_ROUNDS`       | `12`                   | جولات تجزئة كلمة المرور                                     |
-| `STORAGE_ROOT`        | `./storage`            | جذر التخزين                                                 |
-| `BOOKS_SOURCE_DIR`    | `./storage/books`      | مصدر الـ Master PDF                                          |
-| `GENERATED_DIR`       | `./storage/generated`  | مكان النسخ الشخصية                                          |
-| `TRANSFERS_DIR`       | `./storage/transfers`  | مكان صور الحوالات                                           |
-| `MAIL_DRIVER`         | `log`                  | `log` يطبع رابط التحقق في الـLog؛ لاحقاً بدّله بـ smtp    |
-| `PUBLIC_BASE_URL`     | `http://localhost:3000`| يُستخدَم في بناء رابط التحقق                                |
-| `WATERMARK_TEXT_AR`   | (نص افتراضي)           | نص العلامة المرئية بالعربي                                  |
-| `WATERMARK_TEXT_EN`   | (نص افتراضي)           | نص العلامة المرئية بالإنجليزي                               |
-| `ADMIN_EMAIL/PASSWORD`| —                      | بيانات المدير الافتراضي (تُنشأ في `npm run seed`)          |
+القيم الحساسة (JWT_SECRET, COPY_SIGNING_KEY, DB_PASSWORD, ADMIN_PASSWORD)
+تُحفَظ خارج المستودع. الجدول أدناه لا يذكر أي أسرار.
 
-انظر [`.env.example`](./.env.example).
+| المتغير                | افتراضي/متطلب              | الوصف                                                    |
+|------------------------|----------------------------|-----------------------------------------------------------|
+| `NODE_ENV`             | `development`              | `production` يمنع `synchronize` الافتراضي.                |
+| `PORT`                 | `3000`                     | منفذ HTTP                                                 |
+| `CORS_ORIGIN`          | `*`                        | قائمة origins مسموحة                                      |
+| `DB_HOST`              | `localhost`                | Postgres host                                             |
+| `DB_PORT`              | `5432`                     | Postgres port                                             |
+| `DB_USERNAME`          | `postgres`                 | Postgres user                                             |
+| `DB_PASSWORD`          | **required**               | Postgres password (لا يُذكر هنا)                         |
+| `DB_DATABASE`          | `qasdiya_platform`         | اسم قاعدة البيانات                                        |
+| `DB_SYNCHRONIZE`       | `false`                    | لا تفعّله في الإنتاج مطلقاً.                              |
+| `JWT_SECRET`           | **required**               | سرّ توقيع JWT (≥ 32 بايت عشوائي)                          |
+| `JWT_EXPIRES_IN`       | `7d`                       | عمر التوكن                                                |
+| `BCRYPT_ROUNDS`        | `12`                       | جولات تجزئة كلمة المرور                                   |
+| `STORAGE_ROOT`         | `./storage`                | جذر التخزين                                               |
+| `BOOKS_SOURCE_DIR`     | `${STORAGE_ROOT}/books`    | مسار الـMaster PDFs                                       |
+| `GENERATED_DIR`        | `${STORAGE_ROOT}/generated`| مكان النسخ الشخصية المُنتَجة                              |
+| `TRANSFERS_DIR`        | `${STORAGE_ROOT}/transfers`| صور الحوالات المرفوعة                                     |
+| `COPY_SIGNING_KEY`     | **required in prod**       | Hex ≥ 32 بايت — سرّ HMAC للتوقيع (لا يُذكر هنا)          |
+| `COPY_SIGNING_KEY_FILE`| —                          | بديل: مسار ملف يحوي المفتاح، بصلاحية 0600                 |
+| `COPY_SIGNING_KEY_ID`  | `k1`                       | معرِّف يُخزَّن مع كل توقيع لتسهيل الدوران                 |
+| `WATERMARK_TEXT_AR`    | (نص افتراضي)               | نص العلامة العربية                                        |
+| `WATERMARK_TEXT_EN`    | (نص افتراضي)               | نص العلامة الإنجليزية                                     |
+| `REDIS_URL`            | —                          | `redis://…` لتخزين مشترك للـRate limits. بدونه يُطبع تحذير |
+| `MAIL_DRIVER`          | `log`                      | `log` يطبع الروابط في الـLog؛ SMTP لاحقاً                 |
+| `MAIL_FROM`            | —                          | عنوان المرسل                                              |
+| `PUBLIC_BASE_URL`      | `http://localhost:3000`    | لبناء روابط التحقق/الاستعادة                             |
+| `ADMIN_EMAIL`          | **required for bootstrap** | بريد المالك (يُستخدم مرة واحدة)                          |
+| `ADMIN_PASSWORD`       | **required for bootstrap** | ≥ 12 حرفاً (لا يُذكر هنا)                                |
+| `ADMIN_FULL_NAME`      | `المدير الأعلى`             | اسم المالك                                                |
+
+انظر [`.env.example`](./.env.example) للنسخة الكاملة، و [`docs/RATE-LIMITS.md`](./docs/RATE-LIMITS.md) لتفصيل الحدود.
 
 ---
 
@@ -224,21 +240,35 @@ GET /downloads/order/:orderId  (يُسجَّل في DownloadLog + AuditLog)
 
 ---
 
-## حماية النسخة (§9)
+## آليات التعريف والتتبع والردع (Publishing Engine — §9)
 
-كل نسخة تُولَّد فور اعتماد الطلب، وتتضمن:
+هذه **آليات تعريف وتتبع وردع**، وليست حماية تشفيرية تمنع النسخ. لكل آلية
+حدود صريحة، لكنّها مجتمعةً تجعل تتبع أي تسريب ممكناً حتى بعد إزالة أي طبقة
+منها.
 
-1. **Watermark مرئي** قطري خفيف على كل صفحة يحمل اسم المشتري وبريده ورقم الطلب.
-2. **UUID + رقم الطلب** في حواشي كل صفحة.
-3. **Metadata** داخل ملف PDF (Title, Author, Subject, Keywords) تحمل
-   `copy_uuid` و `order`.
-4. **صفحة شهادة نهائية** فيها بيانات المشتري كاملة وحمولة JSON للبصمة.
-5. **SHA-256** للنسخة كاملة، يُحفَظ في جدول `issued_copies.fileSha256`.
-6. **سجل بصمة (IssuedCopy)** يربط كل ملف بالمشتري، الكتاب، والطلب، مع تاريخ
-   الإصدار.
+| # | الآلية | ما تفعله | كيف تُزال |
+|---|--------|----------|------------|
+| 1 | تذييل مرئي أسفل كل صفحة يحمل اسم المشتري + بريده + رقم الطلب | يردع المشاركة العارضة | قصّ الصفحة يحذفه |
+| 2 | Watermark قطري شبه شفاف عبر الصفحة | يزيد كلفة الإخفاء | إعادة رسم/OCR/تعتيم عالي التباين يزيله |
+| 3 | UUID + رقم الطلب + رقم الإصدار في زوايا كل صفحة | معرِّف زائد يصمد بعد قص الرأس والذيل | قصّ الحواف يزيله |
+| 4 | Metadata موقّعة (Title/Author/Subject/Keywords تحمل copy_uuid) | أول مكان يُظهر الهوية عند تفريغ الميتاداتا | أي أداة تجرد PDF metadata تحذفها |
+| 5 | صفحة شهادة نهائية بحمولة JSON كاملة | نص هوية قابل للقراءة البشرية | حذف الصفحة الأخيرة يزيلها |
+| 6 | **توقيع HMAC-SHA256 منفصل مخزَّن في قاعدة البيانات — خارج الملف** | الوحيدة التي لا يمكن للمهاجم إزالتها من نسخة مسرَّبة لأنّها ليست داخلها. مع SHA-256 لكل توليد، تسمح بربط ملف مسرَّب بعينه بمشترٍ محدد | لا تُزال — تعيش في الخادم |
 
-لا يُحتفَظ بنسخة جاهزة لكل عميل: النسخة تُعاد كتابتها من الأصل عند كل
-اعتماد، والمعرفات ثابتة (نفس copy_uuid) عند إعادة الإصدار لنفس الطلب.
+الطبقات 1-5 داخل الملف؛ الطبقة 6 هي **المرساة**: بها + بجدول
+`issued_copy_generations` نستطيع التحقق عبر أداة `bin/verify-copy.ts` بأن
+ملفاً بعينه ليس محرَّفاً وأنّه أُصدر لبائع محدد.
+
+### دورة حياة النسخة والتوليدات
+
+- كل عملية شراء تُنتج صفاً واحداً في `issued_copies` مع `copyUuid` ثابت.
+- كل مرة تُنتج فيها ملفاً جديداً (اعتماد أولي أو إعادة إصدار من المشتري أو
+  إعادة إصدار إدارية) يُلحَق صفٌّ في `issued_copy_generations` يحمل:
+  - `generationId` فريد لهذا الملف تحديداً،
+  - `generationNumber` تسلسلي (1 للأول، 2 لأول إعادة إصدار...)،
+  - `fileSha256` مستقل،
+  - `signedPayload` + `signature` منفصلَين.
+- الملفات القديمة تبقى على القرص وتبقى مسجَّلة، لتمكين المقارنة الجنائية.
 
 ---
 
@@ -291,11 +321,28 @@ GET /downloads/order/:orderId  (يُسجَّل في DownloadLog + AuditLog)
 
 ## وثائق مرفقة
 
-- [`docs/CONSTITUTION.md`](./docs/CONSTITUTION.md) — دستور المنصة (IRPB §8) وقائمة التسليم.
-- [`docs/RBAC.md`](./docs/RBAC.md) — الأدوار الستة ومصفوفة الصلاحيات.
+- [`docs/IRPB-COMPLIANCE-MATRIX.md`](./docs/IRPB-COMPLIANCE-MATRIX.md) — ربط كل بند من الملفات الستة بالكود/النقطة/الاختبار مع Implemented/Partial/Missing.
+- [`docs/DB-SCHEMA.md`](./docs/DB-SCHEMA.md) — الجداول، الحقول، الفهارس، والـMigrations.
+- [`docs/RATE-LIMITS.md`](./docs/RATE-LIMITS.md) — القيم الدقيقة لكل نقطة + Redis backend.
+- [`docs/RBAC.md`](./docs/RBAC.md) — الأدوار الستة ومصفوفة الصلاحيات + trigger `super_admin`.
 - [`docs/OPERATIONS.md`](./docs/OPERATIONS.md) — دليل التشغيل الإداري اليومي.
 - [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) — نشر VPS + Nginx + systemd + TLS + بريد.
-- [`docs/BACKUP.md`](./docs/BACKUP.md) — نسخ احتياطية يومية/أسبوعية/شهرية + Restore drill.
+- [`docs/BACKUP.md`](./docs/BACKUP.md) — نسخ احتياطية + `scripts/backup-restore-drill.sh`.
+- [`docs/CONSTITUTION.md`](./docs/CONSTITUTION.md) — دستور المنصة (IRPB §8) وقائمة التسليم.
+
+## Verify a leaked copy
+
+```bash
+# Export the signedPayload + signature for a suspected copy:
+psql -c "SELECT \"signedPayload\" FROM issued_copy_generations WHERE \"generationId\"='…'" > payload.json
+psql -c "SELECT signature FROM issued_copy_generations WHERE \"generationId\"='…'" > sig.json
+
+# Verify offline (also SHA-256 the file if you have it):
+COPY_SIGNING_KEY_FILE=/etc/qasdiya/copy-signing.key \
+  npm run verify-copy -- --payload payload.json --sig sig.json --file suspected.pdf
+```
+
+`verify-copy` exits 0 if signature + hash both match; 1 otherwise.
 
 ## الرخصة
 

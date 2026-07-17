@@ -72,6 +72,15 @@ export class User {
   @Column({ type: 'timestamptz', nullable: true })
   acceptedAt: Date | null;
 
+  /**
+   * Bumped whenever the credential material or role changes. JWTs embed the
+   * value they were signed with; a mismatch → the token is rejected. Lets a
+   * password reset invalidate every existing session without a token
+   * blacklist.
+   */
+  @Column({ type: 'integer', default: 1 })
+  tokenVersion: number;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 

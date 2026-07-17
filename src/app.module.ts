@@ -7,6 +7,8 @@ import {
   ThrottlerModule,
   seconds,
 } from '@nestjs/throttler';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
+import Redis from 'ioredis';
 import { getDatabaseConfig } from '@/config/database.config';
 import { ALL_ENTITIES } from '@/database';
 import { AuditModule } from '@/modules/audit/audit.module';
@@ -28,15 +30,36 @@ import { ContentModule } from '@/modules/content/content.module';
     ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
     TypeOrmModule.forRoot({ ...getDatabaseConfig(), entities: ALL_ENTITIES }),
     /**
-     * Rate limiting per IRPB file 3 §8. Three named tiers so we can pick per
-     * endpoint (unauthenticated auth = burst, general API = default, uploads
-     * = strict) without inventing new numbers each time.
+     * Three named tiers per IRPB file 3 §8. See docs/RATE-LIMITS.md for exact
+     * numbers. When REDIS_URL is set the counters live in Redis so multi-node
+     * deploys share them; otherwise the default in-memory store is used and
+     * we log a warning.
      */
-    ThrottlerModule.forRoot([
-      { name: 'default', ttl: seconds(60), limit: 120 },
-      { name: 'auth', ttl: seconds(60), limit: 20 },
-      { name: 'upload', ttl: seconds(60), limit: 10 },
-    ]),
+    ThrottlerModule.forRootAsync({
+      useFactory: () => {
+        const throttlers = [
+          { name: 'default', ttl: seconds(60), limit: 120 },
+          { name: 'auth', ttl: seconds(60), limit: 20 },
+          { name: 'upload', ttl: seconds(60), limit: 10 },
+        ];
+        const redisUrl = process.env.REDIS_URL;
+        if (redisUrl) {
+          const redis = new Redis(redisUrl, {
+            enableOfflineQueue: false,
+            maxRetriesPerRequest: 2,
+          });
+          return {
+            throttlers,
+            storage: new ThrottlerStorageRedisService(redis),
+          };
+        }
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[throttler] REDIS_URL not set — using in-memory storage. NOT suitable for multi-node deployments.',
+        );
+        return { throttlers };
+      },
+    }),
     AuditModule,
     MailModule,
     AuthModule,

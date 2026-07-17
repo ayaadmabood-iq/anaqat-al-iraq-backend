@@ -8,16 +8,22 @@ import {
   OneToMany,
   OneToOne,
   PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { User } from './user.entity';
 import { Book } from './book.entity';
 import { Order } from './order.entity';
 import { DownloadLog } from './download-log.entity';
+import { IssuedCopyGeneration } from './issued-copy-generation.entity';
 
 /**
- * Fingerprint registry (§9 of the founding document). One row per personalized
- * PDF delivered to a buyer. The generated file is regenerated on demand from
- * these fields — nothing pre-baked is stored per user.
+ * Purchase identity — one row per approved order. The stable {@link copyUuid}
+ * survives every reissue. Per-file details (hash, signature, path) live on
+ * {@link IssuedCopyGeneration} so we never lose the history when a user
+ * requests a fresh download.
+ *
+ * The `currentGenerationNumber` and `currentFilePath` mirrors on this row are
+ * a cache for hot-path reads; the audit history is authoritative.
  */
 @Entity('issued_copies')
 export class IssuedCopy {
@@ -68,11 +74,18 @@ export class IssuedCopy {
   @Column({ type: 'varchar', length: 100, nullable: true })
   buyerCity: string | null;
 
+  /** Cache of the latest generation (see IssuedCopyGeneration for history). */
   @Column({ type: 'varchar', length: 500 })
   generatedFilePath: string;
 
   @Column({ type: 'varchar', length: 128 })
   fileSha256: string;
+
+  @Column({ type: 'integer', default: 0 })
+  currentGenerationNumber: number;
+
+  @Column({ type: 'uuid', nullable: true })
+  currentGenerationId: string | null;
 
   @Column({ type: 'varchar', length: 500 })
   visibleWatermark: string;
@@ -83,6 +96,12 @@ export class IssuedCopy {
   @CreateDateColumn({ type: 'timestamptz' })
   issuedAt: Date;
 
+  @UpdateDateColumn({ type: 'timestamptz' })
+  updatedAt: Date;
+
   @OneToMany(() => DownloadLog, (d) => d.issuedCopy)
   downloads: DownloadLog[];
+
+  @OneToMany(() => IssuedCopyGeneration, (g) => g.issuedCopy)
+  generations: IssuedCopyGeneration[];
 }

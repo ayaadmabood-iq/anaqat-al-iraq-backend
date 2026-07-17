@@ -30,11 +30,24 @@ export class CreateBookDto {
   description?: Record<string, string>;
 
   @IsString()
+  @Matches(/^[a-z0-9][a-z0-9/_.-]{0,499}$/i, {
+    message: 'masterPdfPath must be relative and free of "..", spaces and backslashes',
+  })
   masterPdfPath: string;
 
-  @IsOptional() @IsString() editionVersion?: string;
-  @IsOptional() @IsString() samplePdfPath?: string;
-  @IsOptional() @IsString() coverImagePath?: string;
+  @IsOptional() @IsString() @Length(1, 16) editionVersion?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-z0-9][a-z0-9/_.-]{0,499}$/i, {
+    message: 'samplePdfPath must be relative and free of "..", spaces and backslashes',
+  })
+  samplePdfPath?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-z0-9][a-z0-9/_.-]{0,499}$/i)
+  coverImagePath?: string;
 
   @IsOptional() @IsUUID() categoryId?: string;
 

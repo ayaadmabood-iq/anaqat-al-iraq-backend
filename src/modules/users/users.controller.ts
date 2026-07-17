@@ -9,13 +9,14 @@ import {
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '@/modules/auth/guards/roles.guard';
 import { Roles } from '@/modules/auth/decorators/roles.decorator';
 import {
   CUSTOMER_SUPPORT_ADMIN,
   OWNER_ONLY,
 } from '@/modules/auth/roles';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('admin/customers')
 export class AdminCustomersController {
   constructor(private readonly svc: UsersService) {}
