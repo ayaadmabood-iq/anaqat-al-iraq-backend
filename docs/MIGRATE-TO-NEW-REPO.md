@@ -64,5 +64,31 @@ Save. Every subsequent change must go through a PR that runs CI to green.
 
 The migration script does NOT delete `anaqat-al-iraq-backend`. Only after
 the CI on `al-qasdi-project` has gone green once and you have downloaded
-a copy of the new repo, you may archive the old one from GitHub Settings
-→ Danger Zone. Do not delete it.
+a copy of the new repo, you may **archive** the old one from GitHub
+Settings → Danger Zone. Do not delete it.
+
+## What the mirror script guarantees before pushing
+
+The script refuses to run if any of these hold:
+
+- the working tree has uncommitted changes;
+- any tracked file matches a secret-shaped pattern (`.env`, `.env.*`
+  other than `.env.example`, `storage/keys/**`, `storage/mail-outbox/**`,
+  `storage/generated/**`, `storage/transfers/**`, `*.pem`, `*.key`,
+  `*.pfx`, `id_rsa`, `id_ed25519`);
+- `gh` is installed AND the destination repo is Public (must be Private).
+
+You should still eyeball the last commit's file list before authorising
+the push — the guard is safety net, not policy.
+
+## After the push — send back
+
+Once the first CI run is green, please share:
+
+- the repo URL: `https://github.com/ayaadmabood-iq/al-qasdi-project`
+- the successful Actions run URL
+- the commit SHA on `main`
+- the tag URL: `.../releases/tag/v1.0.0-rc1`
+- confirmation that branch protection on `main` is enabled
+
+Then we consider `v1.0.0-rc1` formally delivered.

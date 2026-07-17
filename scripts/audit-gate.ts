@@ -27,8 +27,17 @@ interface AllowEntry {
   package: string;
   severity: string;
   reason: string;
-  owner: string;
+  /** Legacy — kept for backwards compatibility. */
+  owner?: string;
+  /** Developer/security lead who monitors upstream for a patch. */
+  technicalOwner?: string;
+  /** Business owner who approved carrying the residual risk. */
+  riskAcceptedBy?: string;
   expiresAt: string;
+}
+interface AllowDoc {
+  allow?: AllowEntry[];
+  policy?: { maxExpiryDays?: number; lastReviewedAt?: string };
 }
 
 function runAudit(): { advisories: Advisory[]; raw: unknown } {
@@ -60,16 +69,52 @@ function runAudit(): { advisories: Advisory[]; raw: unknown } {
   return { advisories: list, raw: parsed };
 }
 
-function loadAllowlist(): AllowEntry[] {
+function loadAllowlist(): AllowDoc {
   const p = path.join(process.cwd(), '.audit-allowlist.json');
-  if (!fs.existsSync(p)) return [];
-  const doc = JSON.parse(fs.readFileSync(p, 'utf8')) as { allow?: AllowEntry[] };
-  return doc.allow ?? [];
+  if (!fs.existsSync(p)) return { allow: [] };
+  return JSON.parse(fs.readFileSync(p, 'utf8')) as AllowDoc;
+}
+
+function validateAllowlistShape(doc: AllowDoc): string[] {
+  const errs: string[] = [];
+  const maxDays = doc.policy?.maxExpiryDays ?? 90;
+  const now = new Date();
+  for (const e of doc.allow ?? []) {
+    if (!e.ghsa || !e.package || !e.severity || !e.reason || !e.expiresAt) {
+      errs.push(`entry missing required fields: ${JSON.stringify(e)}`);
+      continue;
+    }
+    if (!e.technicalOwner && !e.owner) {
+      errs.push(`entry ${e.package}/${e.ghsa} missing technicalOwner`);
+    }
+    if (!e.riskAcceptedBy) {
+      errs.push(`entry ${e.package}/${e.ghsa} missing riskAcceptedBy`);
+    }
+    const exp = new Date(e.expiresAt);
+    if (isNaN(exp.getTime())) {
+      errs.push(`entry ${e.package}/${e.ghsa} has invalid expiresAt`);
+      continue;
+    }
+    const daysAhead = (exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    if (daysAhead > maxDays + 1) {
+      errs.push(
+        `entry ${e.package}/${e.ghsa} expiresAt=${e.expiresAt} is more than ${maxDays} days ahead — policy violation`,
+      );
+    }
+  }
+  return errs;
 }
 
 function main() {
   const { advisories } = runAudit();
-  const allow = loadAllowlist();
+  const allowDoc = loadAllowlist();
+  const allow = allowDoc.allow ?? [];
+  const shapeErrs = validateAllowlistShape(allowDoc);
+  if (shapeErrs.length) {
+    console.log('\nAllowlist policy violations:');
+    for (const e of shapeErrs) console.log(`  ✗ ${e}`);
+    process.exit(1);
+  }
   const now = new Date();
 
   // Deduplicate (ghsa, package).

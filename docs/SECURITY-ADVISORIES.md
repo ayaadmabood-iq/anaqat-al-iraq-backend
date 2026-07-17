@@ -29,7 +29,7 @@ npm audit --omit=dev
   - `fileFilter` + `assertTransferExtension` + `isTransferMimeAllowed`.
   - Post-write `sniffAndValidate` deletes any file whose magic bytes do
     not match its declared type.
-- **Decision: accept + track.** The remaining DoS vectors need many
+- **Decision: accept + track (max 90-day expiry, see `.audit-allowlist.json`).** The remaining DoS vectors need many
   parallel connections; rate limit + auth gate + size cap make sustained
   abuse impractical at MVP traffic. Re-audit when Multer 3 lands.
 
@@ -41,7 +41,7 @@ npm audit --omit=dev
 - Attack surface: we never pass user input into `_.template`, `_.set`,
   `_.unset`, or `_.omit`. The exploited functions are not used in our code
   or in `@nestjs/config`'s current template-free flow.
-- **Decision: accept + track.** Requires a patched lodash upstream in the
+- **Decision: accept + track (max 90-day expiry, see `.audit-allowlist.json`).** Requires a patched lodash upstream in the
   Nest dependency chain; no code we ship exposes the vulnerable APIs.
 
 ### 3. `tar` / `node-tar` — path traversal on extraction
@@ -79,7 +79,7 @@ npm audit --omit=dev
   downstream renderer. Our API returns JSON only; no HTML render surface;
   Helmet CSP set to `default-src 'none'`; `Content-Disposition` filenames
   pass through `safeFilename`.
-- **Decision: accept + track.**
+- **Decision: accept + track (max 90-day expiry, see `.audit-allowlist.json`).**
 
 ### 8. `@nestjs/common` — inherits `file-type`
 
@@ -103,7 +103,7 @@ npm audit --omit=dev
   `GHSA-j47w-4g3g-c36v` (ZIP bomb).
 - We do not depend on `file-type` directly. It comes through Nest's dev
   chain and is not called at runtime.
-- **Decision: accept + track.**
+- **Decision: accept + track (max 90-day expiry, see `.audit-allowlist.json`).**
 
 ### 12. `qs` (via `body-parser`, `express`) — DoS on malformed comma-format arrays
 
@@ -143,6 +143,20 @@ npm audit --omit=dev
 the surface analysis above. Every `accept + track` line is re-evaluated on
 each dependency bump, and CI will re-print this table on every PR (see
 `.github/workflows/ci.yml`).
+
+## Governance
+
+- **Technical owner** of every allowlist entry: `security@qasdiya.local`
+  (developer / security lead). They monitor upstream for a patched release
+  and re-triage on every dependency bump.
+- **Risk owner**: Dr. Iyad. They approved the residual risk of carrying
+  each entry.
+- **Expiry policy**: `maxExpiryDays: 90`. When an entry's `expiresAt`
+  elapses, `audit-gate.ts` starts failing CI again until either the
+  underlying dep is upgraded or the entry is re-triaged (and re-signed
+  by the risk owner) with a fresh ≤ 90-day horizon.
+- **Removal criteria**: bump the dep and confirm the advisory is off the
+  `npm audit` list — the allowlist entry is then simply deleted.
 
 If any advisory is later reported as actively exploited in the wild, the
 mitigation is: pin an override in `package.json` `overrides`, redeploy, and
