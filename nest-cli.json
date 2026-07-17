@@ -7,6 +7,11 @@
     "webpack": false,
     "tsConfigPath": "tsconfig.json",
     "plugins": [],
-    "assets": []
+    "assets": [
+      {
+        "include": "assets/**/*",
+        "watchAssets": true
+      }
+    ]
   }
 }

@@ -253,21 +253,42 @@ export class OrdersService {
   }
 
   async approve(admin: User, orderId: string, ip?: string) {
+    // Idempotent status transition. `UPDATE ... WHERE status='awaiting_review'
+    // RETURNING *` is atomic at the row level: two concurrent approve calls
+    // race for the row lock; the winner sees `affected=1`, the loser sees
+    // `affected=0` and gets a 400 without side effects. This also protects
+    // against a second click on the same "approve" button in the admin UI.
+    const now = new Date();
+    const updated = await this.orders
+      .createQueryBuilder()
+      .update()
+      .set({
+        status: 'approved',
+        approvedAt: now,
+        approvedByUserId: admin.id,
+      })
+      .where('id = :id AND status = :expected', {
+        id: orderId,
+        expected: 'awaiting_review',
+      })
+      .execute();
+    if (updated.affected === 0) {
+      // Distinguish 404 from race: check whether the order exists at all.
+      const exists = await this.orders.count({ where: { id: orderId } });
+      if (exists === 0) throw new NotFoundException();
+      throw new BadRequestException(
+        'لا يمكن اعتماد طلب لا يزال بانتظار الدفع أو تم اعتماده مسبقاً',
+      );
+    }
     const order = await this.orders.findOne({
       where: { id: orderId },
       relations: ['book', 'user'],
     });
     if (!order) throw new NotFoundException();
-    if (order.status !== 'awaiting_review') {
-      throw new BadRequestException(
-        'لا يمكن اعتماد طلب لا يزال بانتظار الدفع أو تم اعتماده مسبقاً',
-      );
-    }
-    order.status = 'approved';
-    order.approvedAt = new Date();
-    order.approvedByUserId = admin.id;
-    await this.orders.save(order);
 
+    // The unique constraint `uq_generation_per_copy (issuedCopyId,
+    // generationNumber)` guarantees no duplicate generation is ever
+    // committed even if this method is somehow re-entered mid-issue.
     const { copy, generation } = await this.fingerprint.issueCopyForOrder(
       order,
       order.book,

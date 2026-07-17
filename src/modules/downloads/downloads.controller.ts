@@ -1,10 +1,12 @@
 import {
   Controller,
+  ForbiddenException,
   Get,
   Headers,
   Ip,
   NotFoundException,
   Param,
+  Post,
   Query,
   Res,
   UseGuards,
@@ -12,6 +14,7 @@ import {
 import type { Response } from 'express';
 import * as fs from 'fs';
 import { DownloadsService } from './downloads.service';
+import { DownloadLinkService } from './download-link.service';
 import { safeFilename } from '@/modules/common/safe-path';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/modules/auth/guards/roles.guard';
@@ -20,14 +23,38 @@ import { Roles } from '@/modules/auth/decorators/roles.decorator';
 import {
   ANY_ADMIN,
   CUSTOMER_SUPPORT_ADMIN,
+  CUSTOMER_ROLES,
 } from '@/modules/auth/roles';
 import type { User } from '@/database';
 
-@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('downloads')
 export class DownloadsController {
-  constructor(private readonly svc: DownloadsService) {}
+  constructor(
+    private readonly svc: DownloadsService,
+    private readonly links: DownloadLinkService,
+  ) {}
 
+  /**
+   * Buyer requests a short-TTL signed link for the personal copy of an
+   * approved order. The returned URL can be sent to a download manager
+   * without carrying the buyer's JWT. The TTL (default 300s) is set by
+   * DOWNLOAD_URL_TTL_SEC.
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...CUSTOMER_ROLES)
+  @Post('order/:orderId/link')
+  async issueLink(@CurrentUser() user: User, @Param('orderId') orderId: string) {
+    // Confirm ownership + fulfilled state before minting a link.
+    await this.svc.assertDownloadableForUser(user, orderId);
+    return this.links.issue(orderId, user.id);
+  }
+
+  /**
+   * Legacy JWT-authenticated download. Left in place for existing clients;
+   * new consumers should use `POST order/:orderId/link` + `GET signed?t=…`.
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...CUSTOMER_ROLES)
   @Get('order/:orderId')
   async downloadOrder(
     @CurrentUser() user: User,
@@ -36,8 +63,34 @@ export class DownloadsController {
     @Headers('user-agent') userAgent: string,
     @Res() res: Response,
   ) {
-    const { absPath, downloadFileName } = await this.svc.prepareDownload(
-      user,
+    return this.serve(orderId, user.id, ip, userAgent, res);
+  }
+
+  /**
+   * Signed short-TTL endpoint. Anonymous — the signature IS the auth. We
+   * still look up the user + verify the copy exists to hydrate the download
+   * log.
+   */
+  @Get('signed')
+  async downloadSigned(
+    @Query('t') token: string,
+    @Ip() ip: string,
+    @Headers('user-agent') userAgent: string,
+    @Res() res: Response,
+  ) {
+    const { orderId, userId } = this.links.verify(token);
+    return this.serve(orderId, userId, ip, userAgent, res);
+  }
+
+  private async serve(
+    orderId: string,
+    userId: string,
+    ip: string,
+    userAgent: string,
+    res: Response,
+  ) {
+    const { absPath, downloadFileName } = await this.svc.prepareDownloadForUserId(
+      userId,
       orderId,
       ip,
       userAgent,

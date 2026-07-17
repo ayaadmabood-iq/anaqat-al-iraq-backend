@@ -4,19 +4,7 @@ import { Repository } from 'typeorm';
 import { createHash, randomUUID } from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib';
-
-/**
- * StandardFonts.Helvetica uses WinAnsi encoding and cannot render Arabic
- * script. For on-page text we replace any character outside WinAnsi with '?'
- * so the PDF still generates; the full Arabic identity remains inside PDF
- * metadata (UTF-16) and the JSON fingerprint payload. Adding a proper Arabic
- * font (CID-embedded) is a v2 line item — the fingerprint anchor is the
- * detached HMAC signature stored in the DB, not the rendered footer.
- */
-function toWinAnsiSafe(s: string): string {
-  return (s || '').replace(/[^\x20-\x7E\xA0-\xFF]/g, '?');
-}
+import { PDFDocument, PDFFont, PDFPage, degrees, rgb } from 'pdf-lib';
 import {
   Book,
   IssuedCopy,
@@ -26,30 +14,74 @@ import {
 } from '@/database';
 import { safeJoin } from '@/modules/common/safe-path';
 import { SigningService, SigningPayload } from './signing.service';
+import { containsArabic, shapeForRtl } from './arabic-shape';
+import { embedFonts } from './font-registry';
+
+/**
+ * Render Arabic strings with the embedded Amiri font and Latin strings with
+ * Helvetica. When a string has any Arabic character we shape+reorder it for
+ * RTL and draw with the Arabic font; otherwise we draw with Helvetica as
+ * before.
+ */
+function drawText(
+  page: PDFPage,
+  text: string,
+  opts: {
+    x: number;
+    y: number;
+    size: number;
+    latinFont: PDFFont;
+    arabicFont: PDFFont;
+    color?: ReturnType<typeof rgb>;
+    opacity?: number;
+    rotate?: ReturnType<typeof degrees>;
+    /** When true, anchor `x` to the right edge — needed for RTL alignment. */
+    rightAlign?: boolean;
+  },
+): void {
+  const isArabic = containsArabic(text);
+  const rendered = isArabic ? shapeForRtl(text) : text;
+  const font = isArabic ? opts.arabicFont : opts.latinFont;
+  let x = opts.x;
+  if (opts.rightAlign) {
+    const w = font.widthOfTextAtSize(rendered, opts.size);
+    x = opts.x - w;
+  }
+  page.drawText(rendered, {
+    x,
+    y: opts.y,
+    size: opts.size,
+    font,
+    color: opts.color ?? rgb(0, 0, 0),
+    opacity: opts.opacity,
+    rotate: opts.rotate,
+  });
+}
 
 /**
  * Digital Publishing Engine (IRPB file 4).
  *
  * These are identification, tracking and deterrence mechanisms — NOT
- * cryptographic prevention. A determined attacker can strip any single layer;
- * the value is redundancy plus the offline detached signature stored in the
- * database so a leaked copy can still be tied to its buyer.
+ * cryptographic prevention. A determined attacker can strip any single layer.
+ * Every layer has explicit limits (see docs/IRPB-COMPLIANCE-MATRIX.md).
  *
- *   • Visible bottom-of-page footer with buyer + order#  → cropping removes it
- *   • Diagonal semi-transparent watermark                → OCR/redaction can hide it
- *   • UUID + edition markers in the page corners         → cropping removes them
- *   • Signed metadata (Title/Author/Subject/Keywords)    → metadata edit strips them
- *   • Trailer certificate page with the full payload     → last-page removal strips it
- *   • Detached HMAC signature stored in the DB           → cannot be removed from file,
- *                                                          because it lives outside it
+ *   • Visible bottom-of-page footer with buyer + order#  → removed by cropping
+ *   • Diagonal semi-transparent watermark                → removed by OCR/redaction/re-rasterize
+ *   • UUID + edition markers in the page corners         → removed by cropping
+ *   • Signed metadata (Title/Author/Subject/Keywords)    → removed by any metadata editor
+ *   • Trailer certificate page with the full payload     → removed by deleting the last page
+ *   • Detached HMAC-SHA256 signature stored in the DB    → PROVES byte-exact integrity of the file we
+ *                                                          produced AND binds that exact byte stream to a
+ *                                                          buyer/order/generation. It DOES NOT identify
+ *                                                          a leaked copy that has been re-compressed,
+ *                                                          re-rasterized, OCR'd, or whose in-file markers
+ *                                                          have been stripped — recognizing an altered file
+ *                                                          against a known buyer would require perceptual
+ *                                                          hashing / steganographic marks (a v2 line item).
  *
- * The last item is the anchor. Every generation persists to
- * `issued_copy_generations` with a unique `generationId` and a fresh SHA-256,
- * and the signing payload is HMAC-signed by SigningService. Verification is
- * done offline via `bin/verify-copy.js` — the signature does not depend on
- * anything embedded in the leaked file, only on the copyUuid + generationId
- * that appear on the certificate page (and, redundantly, in metadata + every
- * page corner).
+ * The value is redundancy: any *one* of the in-file markers surviving lets an
+ * investigator look up the copy via `/admin/lookup/copies` and then verify
+ * byte-exact match with `bin/verify-copy.ts` against the DB record.
  */
 @Injectable()
 export class FingerprintService {
@@ -156,7 +188,7 @@ export class FingerprintService {
     }
 
     const pdf = await PDFDocument.load(masterBytes);
-    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const { latin: latinFont, arabic: arabicFont } = await embedFonts(pdf);
     const visibleText = this.buildVisibleWatermark(user, order.orderNumber);
     const englishHint =
       process.env.WATERMARK_TEXT_EN ||
@@ -167,47 +199,71 @@ export class FingerprintService {
     for (const page of pages) {
       const { width, height } = page.getSize();
 
-      const diagonal = `${englishHint}  |  ${visibleText}`;
+      // Layer 2 — diagonal watermark. Two lines so both scripts are legible.
       const diagSize = Math.max(10, Math.min(16, width / 60));
-      page.drawText(toWinAnsiSafe(diagonal), {
+      drawText(page, englishHint, {
         x: width * 0.08,
-        y: height * 0.5,
+        y: height * 0.52,
         size: diagSize,
-        font,
+        latinFont,
+        arabicFont,
+        color: rgb(0.7, 0.7, 0.7),
+        opacity: 0.22,
+        rotate: degrees(30),
+      });
+      drawText(page, visibleText, {
+        x: width * 0.08,
+        y: height * 0.48,
+        size: diagSize,
+        latinFont,
+        arabicFont,
         color: rgb(0.7, 0.7, 0.7),
         opacity: 0.22,
         rotate: degrees(30),
       });
 
-      const footer = `${user.fullName} | ${user.email} | order ${order.orderNumber}`;
-      page.drawText(toWinAnsiSafe(footer), {
+      // Layer 1 — bottom-of-page identity footer. Latin first (order # +
+      // email), Arabic name right-aligned so it reads correctly under RTL.
+      drawText(page, `order ${order.orderNumber} · ${user.email}`, {
         x: 40,
         y: 24,
         size: 8,
-        font,
+        latinFont,
+        arabicFont,
         color: rgb(0.35, 0.35, 0.35),
         opacity: 0.85,
       });
+      drawText(page, user.fullName, {
+        x: width - 40,
+        y: 24,
+        size: 8,
+        latinFont,
+        arabicFont,
+        color: rgb(0.35, 0.35, 0.35),
+        opacity: 0.85,
+        rightAlign: true,
+      });
 
-      page.drawText(`UUID: ${copyUuid}  gen:${generationNumber}`, {
+      // Layer 3 — corner markers survive header/footer edits.
+      drawText(page, `UUID: ${copyUuid}  gen:${generationNumber}`, {
         x: 20,
         y: 12,
         size: 7,
-        font,
+        latinFont,
+        arabicFont,
         color: rgb(0.4, 0.4, 0.4),
         opacity: 0.6,
       });
-      page.drawText(
-        `ed.${book.editionVersion} · ${order.orderNumber}`,
-        {
-          x: width - 220,
-          y: 12,
-          size: 7,
-          font,
-          color: rgb(0.4, 0.4, 0.4),
-          opacity: 0.6,
-        },
-      );
+      drawText(page, `ed.${book.editionVersion} - ${order.orderNumber}`, {
+        x: width - 20,
+        y: 12,
+        size: 7,
+        latinFont,
+        arabicFont,
+        color: rgb(0.4, 0.4, 0.4),
+        opacity: 0.6,
+        rightAlign: true,
+      });
     }
 
     const hiddenPayload = this.buildHiddenPayload(
@@ -258,22 +314,39 @@ export class FingerprintService {
     ];
     let y = th - 60;
     for (const l of lines) {
-      trailer.drawText(toWinAnsiSafe(l), {
-        x: 40,
-        y,
-        size: 11,
-        font,
-        color: rgb(0.1, 0.1, 0.1),
-      });
+      // Arabic labels are drawn right-aligned to the right border so they
+      // read naturally under RTL; Latin labels stay left-aligned.
+      if (l && containsArabic(l)) {
+        drawText(trailer, l, {
+          x: tw - 40,
+          y,
+          size: 11,
+          latinFont,
+          arabicFont,
+          color: rgb(0.1, 0.1, 0.1),
+          rightAlign: true,
+        });
+      } else {
+        drawText(trailer, l, {
+          x: 40,
+          y,
+          size: 11,
+          latinFont,
+          arabicFont,
+          color: rgb(0.1, 0.1, 0.1),
+        });
+      }
       y -= 16;
     }
+    // The JSON payload is ASCII-safe (URLs/UUIDs/JSON) — draw left-to-right.
     const chunkSize = 90;
     for (let i = 0; i < hiddenPayload.length && y > 40; i += chunkSize) {
-      trailer.drawText(toWinAnsiSafe(hiddenPayload.slice(i, i + chunkSize)), {
+      drawText(trailer, hiddenPayload.slice(i, i + chunkSize), {
         x: 40,
         y,
         size: 8,
-        font,
+        latinFont,
+        arabicFont,
         color: rgb(0.35, 0.35, 0.35),
       });
       y -= 10;

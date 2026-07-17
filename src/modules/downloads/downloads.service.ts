@@ -20,14 +20,33 @@ export class DownloadsService {
     private readonly audit: AuditService,
   ) {}
 
+  async assertDownloadableForUser(user: User, orderId: string): Promise<void> {
+    const order = await this.orders.findOne({
+      where: { id: orderId, userId: user.id },
+    });
+    if (!order) throw new NotFoundException('order not found');
+    if (order.status !== 'fulfilled') {
+      throw new ForbiddenException('لم يتم اعتماد هذا الطلب بعد');
+    }
+  }
+
   async prepareDownload(
     user: User,
     orderId: string,
     ip: string | undefined,
     userAgent: string | undefined,
   ) {
+    return this.prepareDownloadForUserId(user.id, orderId, ip, userAgent);
+  }
+
+  async prepareDownloadForUserId(
+    userId: string,
+    orderId: string,
+    ip: string | undefined,
+    userAgent: string | undefined,
+  ) {
     const order = await this.orders.findOne({
-      where: { id: orderId, userId: user.id },
+      where: { id: orderId, userId },
     });
     if (!order) throw new NotFoundException('order not found');
     if (order.status !== 'fulfilled') {
@@ -45,7 +64,7 @@ export class DownloadsService {
     await this.logs.save(
       this.logs.create({
         issuedCopyId: copy.id,
-        userId: user.id,
+        userId,
         ipAddress: ip ?? null,
         userAgent: userAgent ?? null,
         browser,
@@ -53,8 +72,8 @@ export class DownloadsService {
       }),
     );
     await this.audit.record({
-      actorUserId: user.id,
-      actorRole: user.role,
+      actorUserId: userId,
+      actorRole: 'customer',
       action: 'copy.downloaded',
       entity: 'issued_copy',
       entityId: copy.id,

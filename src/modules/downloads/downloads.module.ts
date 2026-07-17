@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DownloadLog, IssuedCopy, Order } from '@/database';
 import { DownloadsService } from './downloads.service';
+import { DownloadLinkService } from './download-link.service';
 import {
   AdminDownloadsController,
   DownloadsController,
@@ -13,7 +14,7 @@ import { FingerprintModule } from '@/modules/fingerprint/fingerprint.module';
     TypeOrmModule.forFeature([IssuedCopy, Order, DownloadLog]),
     FingerprintModule,
   ],
-  providers: [DownloadsService],
+  providers: [DownloadsService, DownloadLinkService],
   controllers: [DownloadsController, AdminDownloadsController],
   exports: [DownloadsService],
 })

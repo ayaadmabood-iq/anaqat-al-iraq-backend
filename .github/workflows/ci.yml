@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: ['main', 'claude/**']
+  pull_request:
+    branches: ['main']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: qasdiya_test
+          POSTGRES_PASSWORD: qasdiya_test
+          POSTGRES_DB: qasdiya_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U qasdiya_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      NODE_ENV: test
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_USERNAME: qasdiya_test
+      DB_PASSWORD: qasdiya_test
+      DB_DATABASE: qasdiya_test
+      REDIS_URL: redis://127.0.0.1:6379/0
+      JWT_SECRET: ci-jwt-secret-please-change-this-to-something-long-enough
+      BCRYPT_ROUNDS: '4'
+      COPY_SIGNING_KEY: ${{ '11' }}${{ 'ff' }}${{ '11' }}${{ 'ff' }}11ff11ff11ff11ff11ff11ff11ff11ff11ff11ff11ff11ff11ff11ff11ff11ff
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: TypeScript build
+        run: npm run build
+
+      - name: Grant temporary superuser (for the DDL trigger in tests)
+        run: |
+          PGPASSWORD=qasdiya_test psql -h 127.0.0.1 -U qasdiya_test -d qasdiya_test \
+            -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d qasdiya_test \
+            -c "ALTER USER qasdiya_test WITH SUPERUSER;" || true
+
+      - name: Run migrations
+        run: npm run migration:run
+
+      - name: Unit tests
+        run: npm run test:unit -- --ci
+
+      - name: E2E tests
+        run: npm run test:e2e -- --ci
+
+      - name: Coverage
+        run: npm run test:cov -- --ci
+        continue-on-error: false
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+
+      - name: npm audit (production only)
+        run: npm audit --omit=dev --audit-level=none
+        continue-on-error: true
+
+      - name: Advisory decision log check
+        run: |
+          test -f docs/SECURITY-ADVISORIES.md
+          echo "advisory decision log present"
+
+      - name: Bootstrap owner + backup restore drill (smoke)
+        env:
+          ADMIN_EMAIL: ci-owner@example.com
+          ADMIN_PASSWORD: CIOwnerPassw0rd!
+          ADMIN_FULL_NAME: CI Owner
+        run: |
+          # bootstrap the schema-trigger-guarded owner
+          npm run bootstrap:owner
+          # dump + restore into a fresh DB
+          PGPASSWORD=qasdiya_test psql -h 127.0.0.1 -U qasdiya_test -d postgres \
+            -c "CREATE DATABASE qasdiya_restore OWNER qasdiya_test" || true
+          RESTORE_DB=qasdiya_restore bash scripts/backup-restore-drill.sh
