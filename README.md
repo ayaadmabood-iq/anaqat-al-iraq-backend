@@ -1,4 +1,4 @@
-# منصة القراءة القصدية — Backend (MVP v1)
+# المشروع القصدي — al-qasdi-project
 
 > **Purposive Reading Platform** — منصة معرفية مستقلة للنشر والبحث والدراسات
 > القرآنية والإنسانية، تعتمد منهج القراءة القصدية.
@@ -6,6 +6,9 @@
 > شعار المشروع: **القرآن… كما يعرّف نفسه**.
 >
 > المالك: الدكتور إياد محمد عبود.
+>
+> الإصدار: **v1.0.0-rc1** (Release Candidate — يُنقل مستودعُه إلى
+> `al-qasdi-project` عبر `bash scripts/mirror-to-new-repo.sh <url>`).
 
 هذه هي الواجهة الخلفية (Backend API) للنسخة التأسيسية MVP v1، مبنية بـ
 [NestJS](https://nestjs.com/) و [TypeORM](https://typeorm.io/) و PostgreSQL،
