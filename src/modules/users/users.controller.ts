@@ -1,79 +1,39 @@
 import {
+  Body,
   Controller,
   Get,
-  Post,
-  Patch,
-  Delete,
-  Body,
   Param,
+  Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
-import { JwtAuthGuard } from '@/modules/auth/jwt-auth.guard';
-import { RolesGuard } from '@/modules/auth/roles.guard';
-import { Roles } from '@/modules/auth/roles.decorator';
-import { CurrentUser } from '@/modules/auth/current-user.decorator';
-import { JwtPayload } from '@/modules/auth/jwt.strategy';
-import { UserRole } from '@/database';
+import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
+import { Roles } from '@/modules/auth/decorators/roles.decorator';
 
-@Controller('users')
 @UseGuards(JwtAuthGuard)
-export class UsersController {
-  constructor(private usersService: UsersService) {}
-
-  @Post()
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.OWNER, UserRole.MANAGER)
-  async createUser(
-    @CurrentUser() user: JwtPayload,
-    @Body()
-    data: {
-      username: string;
-      password: string;
-      fullName: string;
-      role: UserRole;
-    },
-  ) {
-    return this.usersService.createUser(user.storeId, data);
-  }
+@Roles('admin')
+@Controller('admin/customers')
+export class AdminCustomersController {
+  constructor(private readonly svc: UsersService) {}
 
   @Get()
-  async getUsers(@CurrentUser() user: JwtPayload) {
-    return this.usersService.getUsersByStore(user.storeId);
+  list(@Query('q') q?: string) {
+    return this.svc.listForAdmin(q);
   }
 
   @Get(':id')
-  async getUser(
-    @CurrentUser() user: JwtPayload,
-    @Param('id') userId: string,
-  ) {
-    return this.usersService.getUserById(userId, user.storeId);
+  detail(@Param('id') id: string) {
+    return this.svc.getForAdmin(id);
   }
 
-  @Patch(':id')
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.OWNER, UserRole.MANAGER)
-  async updateUser(
-    @CurrentUser() user: JwtPayload,
-    @Param('id') userId: string,
-    @Body()
-    data: Partial<{
-      fullName: string;
-      role: UserRole;
-      isActive: boolean;
-    }>,
-  ) {
-    return this.usersService.updateUser(userId, user.storeId, data);
+  @Post(':id/deactivate')
+  deactivate(@Param('id') id: string) {
+    return this.svc.setActive(id, false);
   }
 
-  @Delete(':id')
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.OWNER)
-  async deleteUser(
-    @CurrentUser() user: JwtPayload,
-    @Param('id') userId: string,
-  ) {
-    await this.usersService.deleteUser(userId, user.storeId);
-    return { message: 'User deleted successfully' };
+  @Post(':id/activate')
+  activate(@Param('id') id: string) {
+    return this.svc.setActive(id, true);
   }
 }

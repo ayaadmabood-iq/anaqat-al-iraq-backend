@@ -1,5 +1,5 @@
 # ============================================================================
-# Anaqat Al-Iraq — Backend (.gitignore)
+# منصة القراءة القصدية — Backend (.gitignore)
 # NestJS / Node.js / TypeScript
 # ============================================================================
 
@@ -37,9 +37,15 @@ secrets/
 credentials.json
 service-account*.json
 
-# --- Runtime / uploads / data ------------------------------------------------
+# --- Runtime / storage / uploads --------------------------------------------
 uploads/
 \!uploads/.gitkeep
+storage/books/*
+\!storage/books/.gitkeep
+storage/generated/*
+\!storage/generated/.gitkeep
+storage/transfers/*
+\!storage/transfers/.gitkeep
 tmp/
 temp/
 pids/

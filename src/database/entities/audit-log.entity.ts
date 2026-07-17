@@ -1,52 +1,43 @@
 import {
-  Entity,
-  PrimaryColumn,
   Column,
-  ManyToOne,
-  JoinColumn,
   CreateDateColumn,
+  Entity,
   Index,
+  PrimaryGeneratedColumn,
 } from 'typeorm';
-import { v4 as uuid } from 'uuid';
-import { Store } from './store.entity';
-import { User } from './user.entity';
 
+/**
+ * Audit trail (§11 of the founding document). Records the actor, the action,
+ * and enough context to reconstruct sensitive events during forensic review.
+ */
 @Entity('audit_logs')
-@Index(['storeId', 'createdAt'])
-@Index(['userId'])
-@Index(['entityType', 'entityId'])
 export class AuditLog {
-  @PrimaryColumn('uuid')
-  id: string = uuid();
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
-  @Column('uuid', { nullable: false })
-  storeId: string;
+  @Index()
+  @Column({ type: 'uuid', nullable: true })
+  actorUserId: string | null;
 
-  @ManyToOne(() => Store, (store) => store.auditLogs, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'storeId' })
-  store: Store;
+  @Column({ type: 'varchar', length: 32 })
+  actorRole: string;
 
-  @Column('uuid', { nullable: true })
-  userId: string;
-
-  @ManyToOne(() => User, (user) => user.auditLogs, {
-    onDelete: 'SET NULL',
-  })
-  @JoinColumn({ name: 'userId' })
-  user: User;
-
-  @Column('varchar', { length: 255, nullable: false })
+  @Index()
+  @Column({ type: 'varchar', length: 64 })
   action: string;
 
-  @Column('varchar', { length: 100, nullable: false })
-  entityType: string;
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  entity: string | null;
 
-  @Column('varchar', { length: 255, nullable: false })
-  entityId: string;
+  @Column({ type: 'uuid', nullable: true })
+  entityId: string | null;
 
-  @Column('jsonb', { nullable: true })
-  details: Record<string, any>;
+  @Column({ type: 'jsonb', nullable: true })
+  metadata: Record<string, unknown> | null;
 
-  @CreateDateColumn()
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  ipAddress: string | null;
+
+  @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 }

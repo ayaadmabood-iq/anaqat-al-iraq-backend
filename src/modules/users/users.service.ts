@@ -1,113 +1,46 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import * as bcrypt from 'bcrypt';
-import { User, UserRole } from '@/database';
+import { User } from '@/database';
 
 @Injectable()
 export class UsersService {
   constructor(
-    @InjectRepository(User)
-    private usersRepository: Repository<User>,
+    @InjectRepository(User) private readonly repo: Repository<User>,
   ) {}
 
-  async createUser(
-    storeId: string,
-    data: {
-      username: string;
-      password: string;
-      fullName: string;
-      role: UserRole;
-    },
-  ): Promise<User> {
-    const existingUser = await this.usersRepository.findOne({
-      where: {
-        username: data.username,
-        storeId,
-      },
-    });
+  private strip(u: User) {
+    const { passwordHash, ...rest } = u;
+    return rest;
+  }
 
-    if (existingUser) {
-      throw new BadRequestException(
-        'User with this username already exists in this store',
-      );
+  async listForAdmin(search?: string) {
+    const qb = this.repo
+      .createQueryBuilder('u')
+      .orderBy('u.createdAt', 'DESC')
+      .limit(500);
+    if (search) {
+      qb.where('u.email ILIKE :q OR u.fullName ILIKE :q', {
+        q: `%${search}%`,
+      });
     }
+    const rows = await qb.getMany();
+    return rows.map((r) => this.strip(r));
+  }
 
-    const passwordHash = await bcrypt.hash(data.password, 10);
-
-    const user = this.usersRepository.create({
-      ...data,
-      passwordHash,
-      storeId,
+  async getForAdmin(id: string) {
+    const u = await this.repo.findOne({
+      where: { id },
+      relations: ['orders', 'issuedCopies'],
     });
-
-    return this.usersRepository.save(user);
+    if (!u) throw new NotFoundException();
+    return this.strip(u);
   }
 
-  async getUsersByStore(storeId: string): Promise<User[]> {
-    return this.usersRepository.find({
-      where: { storeId },
-      order: { createdAt: 'DESC' },
-    });
-  }
-
-  async getUserById(userId: string, storeId: string): Promise<User> {
-    const user = await this.usersRepository.findOne({
-      where: {
-        id: userId,
-        storeId,
-      },
-    });
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    return user;
-  }
-
-  async updateUser(
-    userId: string,
-    storeId: string,
-    data: Partial<{
-      fullName: string;
-      role: UserRole;
-      isActive: boolean;
-    }>,
-  ): Promise<User> {
-    const user = await this.getUserById(userId, storeId);
-
-    Object.assign(user, data);
-    return this.usersRepository.save(user);
-  }
-
-  async deleteUser(userId: string, storeId: string): Promise<void> {
-    const user = await this.getUserById(userId, storeId);
-    await this.usersRepository.remove(user);
-  }
-
-  async changePassword(
-    userId: string,
-    storeId: string,
-    oldPassword: string,
-    newPassword: string,
-  ): Promise<void> {
-    const user = await this.getUserById(userId, storeId);
-
-    const isPasswordValid = await bcrypt.compare(
-      oldPassword,
-      user.passwordHash,
-    );
-
-    if (!isPasswordValid) {
-      throw new BadRequestException('Old password is incorrect');
-    }
-
-    user.passwordHash = await bcrypt.hash(newPassword, 10);
-    await this.usersRepository.save(user);
+  async setActive(id: string, isActive: boolean) {
+    const u = await this.repo.findOne({ where: { id } });
+    if (!u) throw new NotFoundException();
+    u.isActive = isActive;
+    return this.strip(await this.repo.save(u));
   }
 }

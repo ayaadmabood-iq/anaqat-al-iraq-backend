@@ -1,25 +1,48 @@
-import { IsString, IsNotEmpty, MinLength, IsUUID, IsEnum } from 'class-validator';
-import { UserRole } from '@/database';
+import {
+  IsBoolean,
+  IsEmail,
+  IsIn,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+  MinLength,
+} from 'class-validator';
 
 export class RegisterDto {
   @IsString()
-  @IsNotEmpty()
-  @MinLength(4)
-  username: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @MinLength(6)
-  password: string;
-
-  @IsString()
-  @IsNotEmpty()
+  @Length(3, 200)
   fullName: string;
 
-  @IsUUID()
-  @IsNotEmpty()
-  storeId: string;
+  @IsEmail()
+  email: string;
 
-  @IsEnum(UserRole)
-  role: UserRole;
+  @IsString()
+  @MinLength(8)
+  password: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[+0-9 \-()]{6,40}$/)
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(2, 100)
+  country?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(2, 100)
+  city?: string;
+
+  @IsOptional()
+  @IsIn(['ar', 'en'])
+  preferredLang?: 'ar' | 'en';
+
+  @IsBoolean()
+  privacyAccepted: boolean;
+
+  @IsBoolean()
+  termsAccepted: boolean;
 }

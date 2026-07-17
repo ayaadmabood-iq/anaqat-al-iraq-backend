@@ -1,66 +1,71 @@
 import {
-  Entity,
-  PrimaryColumn,
   Column,
-  ManyToOne,
-  JoinColumn,
   CreateDateColumn,
-  UpdateDateColumn,
+  Entity,
+  Index,
   OneToMany,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
-import { v4 as uuid } from 'uuid';
-import { Store } from './store.entity';
-import { Sale } from './sale.entity';
-import { CustomerSession } from './customer-session.entity';
-import { AuditLog } from './audit-log.entity';
+import { Order } from './order.entity';
+import { IssuedCopy } from './issued-copy.entity';
 
-export enum UserRole {
-  OWNER = 'OWNER',
-  MANAGER = 'MANAGER',
-  SALES_STAFF = 'SALES_STAFF',
-  INVENTORY_STAFF = 'INVENTORY_STAFF',
-}
+export type UserRole = 'user' | 'admin';
 
 @Entity('users')
 export class User {
-  @PrimaryColumn('uuid')
-  id: string = uuid();
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
-  @Column('varchar', { length: 100, nullable: false })
-  username: string;
-
-  @Column('varchar', { length: 255, nullable: false })
-  passwordHash: string;
-
-  @Column('varchar', { length: 255, nullable: false })
+  @Column({ type: 'varchar', length: 200 })
   fullName: string;
 
-  @Column('enum', { enum: UserRole, default: UserRole.SALES_STAFF })
+  @Index({ unique: true })
+  @Column({ type: 'varchar', length: 200 })
+  email: string;
+
+  @Column({ type: 'varchar', length: 200 })
+  passwordHash: string;
+
+  @Column({ type: 'varchar', length: 40, nullable: true })
+  phone: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  country: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  city: string | null;
+
+  @Column({ type: 'varchar', length: 8, default: 'ar' })
+  preferredLang: 'ar' | 'en';
+
+  @Column({ type: 'varchar', length: 16, default: 'user' })
   role: UserRole;
 
-  @Column('uuid', { nullable: false })
-  storeId: string;
+  @Column({ type: 'boolean', default: false })
+  emailVerified: boolean;
 
-  @ManyToOne(() => Store, (store) => store.users, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'storeId' })
-  store: Store;
-
-  @Column('boolean', { default: true })
+  @Column({ type: 'boolean', default: true })
   isActive: boolean;
 
-  @CreateDateColumn()
+  @Column({ type: 'boolean', default: false })
+  privacyAccepted: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  termsAccepted: boolean;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  acceptedAt: Date | null;
+
+  @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt: Date;
 
-  // Relations
-  @OneToMany(() => Sale, (sale) => sale.user)
-  sales: Sale[];
+  @OneToMany(() => Order, (o) => o.user)
+  orders: Order[];
 
-  @OneToMany(() => CustomerSession, (session) => session.user)
-  customerSessions: CustomerSession[];
-
-  @OneToMany(() => AuditLog, (log) => log.user)
-  auditLogs: AuditLog[];
+  @OneToMany(() => IssuedCopy, (c) => c.user)
+  issuedCopies: IssuedCopy[];
 }

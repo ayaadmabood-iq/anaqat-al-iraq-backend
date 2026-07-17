@@ -1,275 +1,269 @@
-# Anaqat Al-Iraq — Backend
+# منصة القراءة القصدية — Backend (MVP v1)
 
-> **Anaqat Al-Iraq** (أناقة العراق) is an inventory and sales management platform for Iraqi clothing stores, with native Arabic/English support and a role-based workflow for store owners and staff.
+> **Purposive Reading Platform** — منصة معرفية مستقلة للنشر والبحث والدراسات
+> القرآنية والإنسانية، تعتمد منهج القراءة القصدية.
+>
+> شعار المشروع: **القرآن… كما يعرّف نفسه**.
+>
+> المالك: الدكتور إياد محمد عبود.
 
-This repository contains the **backend API**, built with [NestJS](https://nestjs.com/), [TypeORM](https://typeorm.io/) and PostgreSQL.
+هذه هي الواجهة الخلفية (Backend API) للنسخة التأسيسية MVP v1، مبنية بـ
+[NestJS](https://nestjs.com/) و [TypeORM](https://typeorm.io/) و PostgreSQL،
+وتغطي كل ما نصّت عليه وثيقة التأسيس v1.0:
+
+- تسجيل المستخدمين مع تحقق البريد الإلكتروني، والموافقة على سياسة الخصوصية
+  وشروط الاستخدام.
+- كتالوج كتب ومقالات متعدد اللغات (JSONB يقبل إضافة لغات دون تعديل الشيمة).
+- تدفق شراء كامل يعتمد الحوالة المصرفية: إنشاء الطلب → عرض حسابات المصرف →
+  رفع صورة الحوالة → مراجعة الإدارة → اعتماد → إنشاء نسخة شخصية → تنزيل.
+- حماية كل نسخة مباعة عبر:
+  - Watermark مرئي على كل صفحة يحمل اسم المشتري وبريده ورقم الطلب
+  - علامة UUID + رقم الطلب في الحاشية
+  - Metadata موقّعة داخل ملف PDF
+  - صفحة "شهادة نسخة شخصية" في نهاية الكتاب تحمل بيانات المشتري وحمولة JSON
+  - Hash تشفيري (SHA-256) لكل ملف مُنتَج، مخزَّن في سجل البصمة
+- لوحة إدارة كاملة: كتب/مقالات/حسابات مصرفية/طلبات/عملاء/تقارير/سجل تنزيلات
+  والبحث بواسطة UUID لأي نسخة.
+- سجل تدقيق `Audit Log` لكل حدث حساس (تسجيل، دخول، رفع حوالة، اعتماد، تنزيل).
 
 ---
 
-## Table of Contents
+## المكدس التقني
 
-1. [Features](#features)
-2. [Tech Stack](#tech-stack)
-3. [Architecture](#architecture)
-4. [Prerequisites](#prerequisites)
-5. [Quick Start](#quick-start)
-6. [Environment Variables](#environment-variables)
-7. [Database Seeding](#database-seeding)
-8. [API Reference](#api-reference)
-9. [Authentication & Roles](#authentication--roles)
-10. [Project Structure](#project-structure)
-11. [Scripts](#scripts)
-12. [Testing](#testing)
-13. [Deployment Notes](#deployment-notes)
-14. [License](#license)
+| الطبقة       | التقنية                                |
+|--------------|----------------------------------------|
+| Runtime      | Node.js 18+                            |
+| Framework    | NestJS 10 (Express)                    |
+| Language     | TypeScript 5                           |
+| Database     | PostgreSQL 12+ (`jsonb`)               |
+| ORM          | TypeORM 0.3                            |
+| Auth         | Passport + JWT + bcrypt                |
+| PDF stamping | `pdf-lib`                              |
+| Uploads      | Multer (disk storage)                  |
+| Validation   | class-validator / class-transformer    |
 
 ---
 
-## Features
-
-- JWT authentication with refresh-friendly design and bcrypt password hashing
-- Role-based access control: `OWNER`, `MANAGER`, `SALES_STAFF`, `INVENTORY_STAFF`
-- Multi-store architecture (one deployment → many stores)
-- Inventory management with category, size, color, style and audience metadata
-- Stock tracking per size with safe decrement on sale
-- Sales workflow with line items, per-user sales history and summary reports
-- Arabic-first data model: categories and content stored in Arabic and English
-- Optional image classification via Google Cloud Vision (graceful fallback when disabled)
-- Global validation pipe (whitelist, forbidNonWhitelisted, transform)
-- CORS with configurable origin, static serving of user uploads
-- Audit log entity for traceability of sensitive operations
-
-## Tech Stack
-
-| Layer       | Technology                           |
-|-------------|--------------------------------------|
-| Runtime     | Node.js 18+                          |
-| Framework   | NestJS 10 (Express platform)         |
-| Language    | TypeScript 5                         |
-| Database    | PostgreSQL 12+                       |
-| ORM         | TypeORM 0.3                          |
-| Auth        | Passport + JWT, bcrypt               |
-| Validation  | class-validator / class-transformer  |
-| Uploads     | Multer                               |
-
-## Architecture
-
-A concise module graph:
-
-```
-AppModule
-├── ConfigModule       (.env loader)
-├── TypeOrmModule      (PostgreSQL)
-├── AuthModule         (JWT, guards, strategies)
-├── UsersModule        (CRUD, role management)
-├── StoreModule        (multi-tenant store entity)
-├── InventoryModule    (items, sizes, stock, classify)
-└── SalesModule        (transactions, reports)
-```
-
-See `ARCHITECTURE.md` and `FILE_STRUCTURE.md` for deeper design notes.
-
-## Prerequisites
-
-- Node.js **18+** (LTS recommended)
-- PostgreSQL **12+** running locally or remotely
-- npm **9+** (or compatible package manager)
-
-## Quick Start
+## تشغيل سريع
 
 ```bash
-# 1. Clone
-git clone https://github.com/ayaadmabood-iq/anaqat-al-iraq-backend.git
-cd anaqat-al-iraq-backend
-
-# 2. Install dependencies
+# 1) تثبيت الاعتمادات
 npm install
 
-# 3. Configure environment
+# 2) إعداد البيئة
 cp .env.example .env
-# edit .env and set DB_PASSWORD, JWT_SECRET, etc.
+#   حدِّث DB_PASSWORD و JWT_SECRET و ADMIN_PASSWORD
 
-# 4. Seed the database (creates schema + demo data)
+# 3) بذر قاعدة البيانات (يُنشئ الشيمة + الأدمن + الكتب الثلاثة + حسابات المصارف)
 npm run seed
 
-# 5. Run in dev mode
+# 4) تشغيل الوضع التطويري
 npm run start:dev
 ```
 
-The API will be available at **`http://localhost:3000/api/v1`**.
+الخادم يعمل على `http://localhost:3000/api/v1`.
 
-## Environment Variables
+---
 
-Configuration is loaded from `.env` via `@nestjs/config`. A full template lives in [`.env.example`](./.env.example).
-
-| Variable                | Required | Default          | Description                                                                 |
-|-------------------------|----------|------------------|-----------------------------------------------------------------------------|
-| `DB_HOST`               | yes      | `localhost`      | PostgreSQL host                                                             |
-| `DB_PORT`               | yes      | `5432`           | PostgreSQL port                                                             |
-| `DB_USERNAME`           | yes      | `postgres`       | PostgreSQL user                                                             |
-| `DB_PASSWORD`           | yes      | —                | PostgreSQL password                                                         |
-| `DB_DATABASE`           | yes      | `anaqat_iraq`    | Database name                                                               |
-| `JWT_SECRET`            | yes      | —                | Secret used to sign JWTs; **must be changed in production**                 |
-| `JWT_EXPIRATION`        | no       | `24h`            | JWT lifetime                                                                |
-| `PORT`                  | no       | `3000`           | HTTP port                                                                   |
-| `UPLOAD_DIR`            | no       | `./uploads`      | Directory for Multer-uploaded files                                         |
-| `NODE_ENV`              | no       | `development`    | `development` enables TypeORM `synchronize` and verbose logging             |
-| `CORS_ORIGIN`           | no       | `*`              | Comma-separated origins allowed by CORS                                     |
-| `GOOGLE_VISION_API_KEY` | no       | (empty)          | Optional; when empty, `/inventory/classify` returns `manual_fallback`       |
-
-> **Never commit `.env`.** It is listed in `.gitignore`; only `.env.example` is tracked.
-
-## Database Seeding
-
-`npm run seed` runs `src/database/seed.ts` which:
-
-- Ensures the schema exists (via TypeORM synchronize)
-- Creates a demo store: `متجر الأناقة`
-- Creates four demo users — all with password `demo123`:
-  - `owner`
-  - `manager`
-  - `sales`
-  - `inventory`
-- Creates 13 Arabic/English clothing categories
-- Creates 5 sample items with stock records
-
-> The demo password is for local development only. Change it before any shared deployment.
-
-## API Reference
-
-All endpoints are prefixed with `/api/v1`. See [`Anaqat-Al-Iraq.postman_collection.json`](./Anaqat-Al-Iraq.postman_collection.json) for an importable Postman collection.
-
-### Authentication
-
-| Method | Path                | Description               |
-|--------|---------------------|---------------------------|
-| POST   | `/auth/login`       | Username + password → JWT |
-| POST   | `/auth/register`    | Register a new user       |
-
-### Users
-
-| Method | Path                | Access                |
-|--------|---------------------|-----------------------|
-| GET    | `/users`            | Authenticated         |
-| GET    | `/users/:id`        | Authenticated         |
-| POST   | `/users`            | Owner, Manager        |
-| PATCH  | `/users/:id`        | Owner, Manager        |
-| DELETE | `/users/:id`        | Owner                 |
-
-### Stores
-
-| Method | Path                | Access         |
-|--------|---------------------|----------------|
-| GET    | `/stores`           | Authenticated  |
-| POST   | `/stores`           | Authenticated  |
-| GET    | `/stores/:id`       | Authenticated  |
-| PATCH  | `/stores/:id`       | Owner          |
-| DELETE | `/stores/:id`       | Owner          |
-
-### Inventory
-
-| Method | Path                                      |
-|--------|-------------------------------------------|
-| GET    | `/inventory/items`                        |
-| GET    | `/inventory/items/search?q=term`          |
-| POST   | `/inventory/items`                        |
-| GET    | `/inventory/items/:id`                    |
-| PATCH  | `/inventory/items/:id`                    |
-| DELETE | `/inventory/items/:id`                    |
-| POST   | `/inventory/items/:id/sizes`              |
-| PATCH  | `/inventory/items/:id/sizes/:size`        |
-| POST   | `/inventory/items/:id/reduce-stock`       |
-| DELETE | `/inventory/items/:id/sizes/:size`        |
-| GET    | `/inventory/stock/total`                  |
-| POST   | `/inventory/classify`                     |
-
-### Sales
-
-| Method | Path                          |
-|--------|-------------------------------|
-| POST   | `/sales`                      |
-| GET    | `/sales`                      |
-| GET    | `/sales/:id`                  |
-| GET    | `/sales/user/:userId`         |
-| GET    | `/sales/report/summary`       |
-
-## Authentication & Roles
-
-Authentication is stateless JWT. Clients:
-
-1. `POST /auth/login` with `{ username, password }` (and optional `?storeId=`)
-2. Store the returned `access_token`
-3. Attach `Authorization: Bearer <token>` on subsequent requests
-
-Roles:
-
-- **OWNER** — full control, including user and store management
-- **MANAGER** — manage users, inventory and sales
-- **SALES_STAFF** — process sales and customer sessions
-- **INVENTORY_STAFF** — manage items and stock
-
-## Project Structure
+## مخطط المجلدات
 
 ```
-backend/
-├── src/
-│   ├── config/           # Config loader
-│   ├── database/
-│   │   ├── entities/     # TypeORM entities
-│   │   └── seed.ts       # Seed script
-│   ├── modules/
-│   │   ├── auth/         # JWT auth, guards, strategies
-│   │   ├── users/        # User CRUD, role logic
-│   │   ├── store/        # Store entity
-│   │   ├── inventory/    # Items, sizes, classify
-│   │   └── sales/        # Transactions, reports
-│   ├── types/            # Shared TS types
-│   ├── app.module.ts     # Root module
-│   └── main.ts           # Bootstrap (CORS, pipes, prefix)
-├── uploads/              # Runtime uploads (ignored in git)
-├── ARCHITECTURE.md
-├── DOCS_INDEX.md
-├── FILE_STRUCTURE.md
-├── MANIFEST.txt
-├── QUICK_START.md
-├── backend-audit-report.md
-├── Anaqat-Al-Iraq.postman_collection.json
-├── .env.example
-├── .gitignore
-├── LICENSE
-├── nest-cli.json
-├── package.json
-├── package-lock.json
-├── tsconfig.json
-└── README.md
+src/
+├── config/                     # إعداد قاعدة البيانات
+├── database/
+│   ├── entities/               # 11 كيان: users, books, orders, issued_copies, ...
+│   ├── seed.ts                 # بذر البيانات
+│   └── index.ts                # تصدير موحد
+├── modules/
+│   ├── auth/                   # التسجيل، التحقق، الدخول، JWT، الأدوار
+│   ├── users/                  # لوحة العملاء (إدارة)
+│   ├── books/                  # كتالوج الكتب + إدارة
+│   ├── articles/               # مقالات مجانية + إدارة
+│   ├── bank-accounts/          # حسابات الحوالة (تديرها الإدارة)
+│   ├── orders/                 # تدفق الشراء الكامل
+│   ├── fingerprint/            # توليد النسخة الشخصية + Watermark + Hash
+│   ├── downloads/              # التنزيل الآمن + سجل التنزيلات
+│   ├── admin/                  # ملخص، تقارير، البحث بـ UUID
+│   ├── audit/                  # AuditLog (Global)
+│   └── mail/                   # مُرسل روابط التحقق (log driver في MVP)
+├── app.module.ts
+└── main.ts
+storage/
+├── books/                      # الأصول الرئيسية (Master PDF لكل كتاب)
+├── generated/                  # النسخ الشخصية المُولَّدة
+└── transfers/                  # صور الحوالات المرفوعة
 ```
 
-## Scripts
+---
 
-| Command                | Purpose                                             |
-|------------------------|-----------------------------------------------------|
-| `npm install`          | Install dependencies                                |
-| `npm run start`        | Start in normal mode                                |
-| `npm run start:dev`    | Start in watch mode                                 |
-| `npm run build`        | Compile TypeScript to `dist/`                       |
-| `npm run start:prod`   | Run compiled output (`node dist/main`)              |
-| `npm run seed`         | Create schema and populate demo data                |
+## متغيرات البيئة
 
-## Testing
+| المتغير               | افتراضي                | الوصف                                                       |
+|-----------------------|------------------------|-------------------------------------------------------------|
+| `PORT`                | `3000`                 | منفذ HTTP                                                   |
+| `DB_HOST/PORT/…`      | localhost/5432         | إعداد PostgreSQL                                             |
+| `DB_DATABASE`         | `qasdiya_platform`     | اسم قاعدة البيانات                                          |
+| `JWT_SECRET`          | —                      | سرّ توقيع JWT (غيّره قبل النشر)                             |
+| `JWT_EXPIRES_IN`      | `7d`                   | عمر التوكن                                                  |
+| `BCRYPT_ROUNDS`       | `12`                   | جولات تجزئة كلمة المرور                                     |
+| `STORAGE_ROOT`        | `./storage`            | جذر التخزين                                                 |
+| `BOOKS_SOURCE_DIR`    | `./storage/books`      | مصدر الـ Master PDF                                          |
+| `GENERATED_DIR`       | `./storage/generated`  | مكان النسخ الشخصية                                          |
+| `TRANSFERS_DIR`       | `./storage/transfers`  | مكان صور الحوالات                                           |
+| `MAIL_DRIVER`         | `log`                  | `log` يطبع رابط التحقق في الـLog؛ لاحقاً بدّله بـ smtp    |
+| `PUBLIC_BASE_URL`     | `http://localhost:3000`| يُستخدَم في بناء رابط التحقق                                |
+| `WATERMARK_TEXT_AR`   | (نص افتراضي)           | نص العلامة المرئية بالعربي                                  |
+| `WATERMARK_TEXT_EN`   | (نص افتراضي)           | نص العلامة المرئية بالإنجليزي                               |
+| `ADMIN_EMAIL/PASSWORD`| —                      | بيانات المدير الافتراضي (تُنشأ في `npm run seed`)          |
 
-- `Anaqat-Al-Iraq.postman_collection.json` — importable Postman collection
-- `test-api.ps1` — PowerShell script to smoke-test the API on Windows
-- `setup-and-test.ps1` — end-to-end local setup and test helper
+انظر [`.env.example`](./.env.example).
 
-## Deployment Notes
+---
 
-- Set `NODE_ENV=production` and **disable** TypeORM `synchronize`; switch to proper migrations
-- Generate a strong `JWT_SECRET` (at least 32 random bytes)
-- Replace the default `CORS_ORIGIN=*` with an explicit list of allowed origins
-- Place the app behind a reverse proxy (nginx/Caddy) with TLS
-- Persist `uploads/` on durable storage or migrate to object storage (S3/MinIO)
-- Run `npm ci && npm run build && npm run start:prod`
+## نقاط API
 
-## License
+جميع النقاط تبدأ بـ `/api/v1`.
 
-Released under the [MIT License](./LICENSE).
+### التوثيق (Auth)
+
+| الطريقة | المسار                        | الوصف                                        |
+|--------|-------------------------------|-----------------------------------------------|
+| POST   | `/auth/register`              | تسجيل مستخدم جديد (يرسل رابط تحقق)            |
+| GET    | `/auth/verify?token=…`        | تأكيد البريد                                  |
+| POST   | `/auth/login`                 | دخول (يُرجع JWT)                              |
+| GET    | `/auth/me`                    | بيانات المستخدم الحالي                        |
+
+### الكتب والمقالات (عامة)
+
+| الطريقة | المسار                        | الوصف                                        |
+|--------|-------------------------------|-----------------------------------------------|
+| GET    | `/books?lang=ar`              | قائمة الكتب المنشورة                          |
+| GET    | `/books/:slug?lang=ar`        | تفاصيل كتاب                                   |
+| GET    | `/articles?lang=ar`           | قائمة المقالات المنشورة                       |
+| GET    | `/articles/:slug?lang=ar`     | قراءة مقال                                    |
+
+### الحسابات المصرفية (للمستخدم عند الشراء)
+
+| الطريقة | المسار                        | الوصف                                        |
+|--------|-------------------------------|-----------------------------------------------|
+| GET    | `/bank-accounts`              | الحسابات النشطة لعرضها للمشتري                |
+
+### الطلبات (المستخدم)
+
+| الطريقة | المسار                                    | الوصف                                       |
+|--------|-------------------------------------------|----------------------------------------------|
+| POST   | `/orders`                                 | إنشاء طلب + الموافقة على اتفاقية الشراء      |
+| GET    | `/orders`                                 | طلبات المستخدم                               |
+| GET    | `/orders/:id`                             | تفاصيل طلب                                   |
+| POST   | `/orders/:id/transfer-proof` (multipart)  | رفع صورة الحوالة (image/pdf ≤ 8MB)          |
+
+### التنزيل
+
+| الطريقة | المسار                        | الوصف                                        |
+|--------|-------------------------------|-----------------------------------------------|
+| GET    | `/downloads/order/:orderId`   | تنزيل النسخة الشخصية (يُسجَّل في السجل)      |
+
+### الإدارة (`admin` فقط)
+
+| الطريقة | المسار                                    | الوصف                                       |
+|--------|-------------------------------------------|----------------------------------------------|
+| GET    | `/admin/summary`                          | ملخص المنصة                                  |
+| GET    | `/admin/reports/sales?from=&to=`          | تقرير المبيعات                               |
+| GET    | `/admin/lookup/copy/:uuid`                | البحث بواسطة UUID (§10)                     |
+| GET/POST/PATCH `/admin/books`             |                                              | إدارة الكتب                                   |
+| POST   | `/admin/books/:id/publish` / `/suspend`   | نشر أو إيقاف كتاب                            |
+| GET/POST/PATCH/DELETE `/admin/articles`   |                                              | إدارة المقالات                                |
+| GET/POST/PATCH/DELETE `/admin/bank-accounts` |                                          | إدارة حسابات الحوالة                          |
+| GET    | `/admin/orders?status=…`                  | كل الطلبات                                   |
+| POST   | `/admin/orders/:id/approve`               | اعتماد الطلب → يُولِّد النسخة الشخصية       |
+| POST   | `/admin/orders/:id/reject`                | رفض الطلب مع ذكر السبب                       |
+| GET/POST `/admin/customers`               |                                              | العملاء (بحث/تفعيل/تعطيل)                    |
+| GET    | `/admin/downloads`                        | آخر عمليات التنزيل                          |
+
+---
+
+## دورة حياة الطلب (§8)
+
+```
+اختيار الكتاب
+      │
+      ▼
+POST /orders  (agreementAccepted=true)  ── حالة: pending_payment
+      │
+      ▼
+GET /bank-accounts  (عرض حسابات الرافدين وTBI)
+      │
+      ▼
+POST /orders/:id/transfer-proof (multipart image/pdf)  ── حالة: awaiting_review
+      │
+      ▼
+POST /admin/orders/:id/approve
+      │  ├─ توليد PDF شخصي (visible + hidden watermark + hash)
+      │  ├─ حفظ IssuedCopy مع copyUuid و fileSha256
+      │  └─ حالة: fulfilled
+      ▼
+GET /downloads/order/:orderId  (يُسجَّل في DownloadLog + AuditLog)
+```
+
+---
+
+## حماية النسخة (§9)
+
+كل نسخة تُولَّد فور اعتماد الطلب، وتتضمن:
+
+1. **Watermark مرئي** قطري خفيف على كل صفحة يحمل اسم المشتري وبريده ورقم الطلب.
+2. **UUID + رقم الطلب** في حواشي كل صفحة.
+3. **Metadata** داخل ملف PDF (Title, Author, Subject, Keywords) تحمل
+   `copy_uuid` و `order`.
+4. **صفحة شهادة نهائية** فيها بيانات المشتري كاملة وحمولة JSON للبصمة.
+5. **SHA-256** للنسخة كاملة، يُحفَظ في جدول `issued_copies.fileSha256`.
+6. **سجل بصمة (IssuedCopy)** يربط كل ملف بالمشتري، الكتاب، والطلب، مع تاريخ
+   الإصدار.
+
+لا يُحتفَظ بنسخة جاهزة لكل عميل: النسخة تُعاد كتابتها من الأصل عند كل
+اعتماد، والمعرفات ثابتة (نفس copy_uuid) عند إعادة الإصدار لنفس الطلب.
+
+---
+
+## الأدوار
+
+- `user` — يستطيع التصفح، الشراء، رفع الحوالة، والتنزيل بعد الاعتماد.
+- `admin` — كل نقاط `/admin/*`. يُنشأ افتراضياً عبر `npm run seed`.
+
+---
+
+## سجل التدقيق (§11)
+
+يُسجَّل كل حدث حساس في جدول `audit_logs` مع: من فعل، ما فعل، على أي كيان،
+البيانات المرفقة، وعنوان IP. الأحداث المُغطّاة حالياً:
+
+- `user.registered`, `user.email_verified`, `user.login`
+- `order.created`, `order.transfer_uploaded`, `order.approved`, `order.rejected`
+- `copy.downloaded`
+
+---
+
+## المبادئ غير القابلة للتغيير (§13)
+
+- القرآن هو المرجعية العليا للمشروع.
+- المنهج المعتمد هو **القراءة القصدية**.
+- جميع البيانات والأكواد والحقوق ملك للدكتور إياد محمد عبود.
+- لا يجوز ربط المنصة بمزود أو مبرمج واحد؛ الشيمة والاعتمادات مفتوحة وقابلة
+  للتراجع.
+- كل التطويرات قابلة للتوسع دون إعادة بناء (لغات جديدة تُضاف كمفتاح JSONB،
+  حالات جديدة تُضاف بدون كسر التدفق).
+
+---
+
+## خارطة الطريق (§12)
+
+- **v1 (MVP)** — بيع الكتب بالحوالة (هذا الإصدار).
+- **v2** — EPUB محمي، عضويات، قراءة داخل الموقع.
+- **v3** — مساعد ذكاء اصطناعي يعتمد حصراً على محتوى المنصة.
+- **v4** — دار نشر رقمية، مؤلفون، مؤتمرات، مركز أبحاث.
+
+---
+
+## الرخصة
+
+جميع الحقوق محفوظة للدكتور إياد محمد عبود. الاستخدام والنشر مقيّدان.

@@ -1,131 +1,149 @@
 import {
-  Injectable,
   BadRequestException,
+  ConflictException,
+  Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
+import { JwtService } from '@nestjs/jwt';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
-import { User, UserRole } from '@/database';
-import { LoginDto } from './dto/login.dto';
+import { randomBytes } from 'crypto';
+import { User, EmailVerificationToken } from '@/database';
 import { RegisterDto } from './dto/register.dto';
-import { JwtPayload } from './jwt.strategy';
+import { LoginDto } from './dto/login.dto';
+import { MailService } from '@/modules/mail/mail.service';
+import { AuditService } from '@/modules/audit/audit.service';
 
 @Injectable()
 export class AuthService {
   constructor(
-    @InjectRepository(User)
-    private usersRepository: Repository<User>,
-    private jwtService: JwtService,
+    @InjectRepository(User) private readonly users: Repository<User>,
+    @InjectRepository(EmailVerificationToken)
+    private readonly tokens: Repository<EmailVerificationToken>,
+    private readonly jwt: JwtService,
+    private readonly mail: MailService,
+    private readonly audit: AuditService,
   ) {}
 
-  async register(registerDto: RegisterDto): Promise<{ access_token: string; user: any }> {
-    const { username, password, fullName, storeId, role } = registerDto;
-
-    // Check if user already exists within this store
-    const existingUser = await this.usersRepository.findOne({
-      where: {
-        username,
-        storeId,
-      },
-    });
-
-    if (existingUser) {
-      throw new BadRequestException('User already exists in this store');
+  async register(dto: RegisterDto, ip?: string) {
+    if (!dto.privacyAccepted || !dto.termsAccepted) {
+      throw new BadRequestException(
+        'يجب الموافقة على سياسة الخصوصية وشروط الاستخدام قبل التسجيل',
+      );
     }
 
-    // Hash password
-    const passwordHash = await bcrypt.hash(password, 10);
+    const emailLc = dto.email.toLowerCase().trim();
+    const existing = await this.users.findOne({ where: { email: emailLc } });
+    if (existing) throw new ConflictException('البريد الإلكتروني مسجّل مسبقًا');
 
-    // Create user
-    const user = this.usersRepository.create({
-      username,
+    const rounds = parseInt(process.env.BCRYPT_ROUNDS || '12', 10);
+    const passwordHash = await bcrypt.hash(dto.password, rounds);
+
+    const user = this.users.create({
+      fullName: dto.fullName.trim(),
+      email: emailLc,
       passwordHash,
-      fullName,
-      storeId,
-      role,
+      phone: dto.phone ?? null,
+      country: dto.country ?? null,
+      city: dto.city ?? null,
+      preferredLang: dto.preferredLang ?? 'ar',
+      role: 'user',
+      emailVerified: false,
+      isActive: true,
+      privacyAccepted: true,
+      termsAccepted: true,
+      acceptedAt: new Date(),
+    });
+    await this.users.save(user);
+
+    await this.issueVerificationToken(user);
+
+    await this.audit.record({
+      actorUserId: user.id,
+      actorRole: 'user',
+      action: 'user.registered',
+      entity: 'user',
+      entityId: user.id,
+      ipAddress: ip,
     });
 
-    await this.usersRepository.save(user);
-
-    const payload: JwtPayload = {
-      userId: user.id,
-      storeId: user.storeId,
-      username: user.username,
-      role: user.role,
-    };
-
-    return {
-      access_token: this.jwtService.sign(payload),
-      user: {
-        id: user.id,
-        username: user.username,
-        fullName: user.fullName,
-        role: user.role,
-        storeId: user.storeId,
-      },
-    };
+    return { id: user.id, email: user.email, verificationRequired: true };
   }
 
-  async login(loginDto: LoginDto, storeId: string): Promise<{ access_token: string; user: any }> {
-    const { username, password } = loginDto;
-
-    // Find user by username and store (store-scoped users)
-    const user = await this.usersRepository.findOne({
-      where: {
-        username,
-        storeId,
-      },
+  async issueVerificationToken(user: User) {
+    const token = randomBytes(48).toString('hex');
+    const expires = new Date(Date.now() + 1000 * 60 * 60 * 48); // 48h
+    await this.tokens.save(
+      this.tokens.create({ userId: user.id, token, expiresAt: expires }),
+    );
+    await this.mail.sendVerificationEmail({
+      to: user.email,
+      fullName: user.fullName,
+      token,
     });
-
-    if (!user) {
-      throw new UnauthorizedException('Invalid username or password');
-    }
-
-    // Verify password
-    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
-
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid username or password');
-    }
-
-    if (!user.isActive) {
-      throw new UnauthorizedException('User account is inactive');
-    }
-
-    // Generate JWT
-    const payload: JwtPayload = {
-      userId: user.id,
-      storeId: user.storeId,
-      username: user.username,
-      role: user.role,
-    };
-
-    return {
-      access_token: this.jwtService.sign(payload),
-      user: {
-        id: user.id,
-        username: user.username,
-        fullName: user.fullName,
-        role: user.role,
-        storeId: user.storeId,
-      },
-    };
   }
 
-  async validateUser(userId: string, storeId: string): Promise<User> {
-    const user = await this.usersRepository.findOne({
-      where: {
-        id: userId,
-        storeId,
-      },
-    });
+  async verifyEmail(token: string) {
+    if (!token) throw new BadRequestException('missing token');
+    const row = await this.tokens.findOne({ where: { token } });
+    if (!row || row.consumedAt || row.expiresAt < new Date()) {
+      throw new BadRequestException('رابط التحقق غير صالح أو انتهت صلاحيته');
+    }
+    row.consumedAt = new Date();
+    await this.tokens.save(row);
 
-    if (!user) {
-      throw new UnauthorizedException('User not found');
+    const user = await this.users.findOne({ where: { id: row.userId } });
+    if (!user) throw new BadRequestException('user missing');
+    user.emailVerified = true;
+    await this.users.save(user);
+
+    await this.audit.record({
+      actorUserId: user.id,
+      actorRole: 'user',
+      action: 'user.email_verified',
+      entity: 'user',
+      entityId: user.id,
+    });
+    return { ok: true };
+  }
+
+  async login(dto: LoginDto, ip?: string) {
+    const emailLc = dto.email.toLowerCase().trim();
+    const user = await this.users.findOne({ where: { email: emailLc } });
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('بيانات الدخول غير صحيحة');
+    }
+    const ok = await bcrypt.compare(dto.password, user.passwordHash);
+    if (!ok) throw new UnauthorizedException('بيانات الدخول غير صحيحة');
+    if (!user.emailVerified) {
+      throw new UnauthorizedException('يرجى تأكيد البريد الإلكتروني أولاً');
     }
 
-    return user;
+    const accessToken = await this.jwt.signAsync({
+      sub: user.id,
+      role: user.role,
+      email: user.email,
+    });
+
+    await this.audit.record({
+      actorUserId: user.id,
+      actorRole: user.role,
+      action: 'user.login',
+      entity: 'user',
+      entityId: user.id,
+      ipAddress: ip,
+    });
+
+    return {
+      accessToken,
+      user: {
+        id: user.id,
+        fullName: user.fullName,
+        email: user.email,
+        role: user.role,
+        preferredLang: user.preferredLang,
+      },
+    };
   }
 }
