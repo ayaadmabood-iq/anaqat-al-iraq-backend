@@ -1,0 +1,34 @@
+# gitleaks baseline — documented, reviewed exceptions.
+#
+# Format: <commit-sha>:<file>:<rule-id>:<line>
+# Any entry here suppresses gitleaks output for that exact match. Add a
+# reason line above each entry so the next reviewer can re-verify.
+#
+# Baseline established: 2026-07-20
+# Reviewer: security@qasdiya.local
+# Rescan cadence: on every dependency-audit sweep (≤ 90 days).
+
+# ─── 1. QUICK_START.md line 51 — documentation placeholder ────────────────
+#
+# The "leak" is a quoted example JWT response body where the token value
+# was replaced by three trailing dots. The visible portion decodes to the
+# public JWT header (algorithm + type), so there is no secret material.
+# The file was removed from the tree by the scaffolding-reset commit and
+# only survives in the initial-commit blob.
+68e14bae514a154b929f464b94a36d1c45f9de23:QUICK_START.md:generic-api-key:51
+
+# ─── 2. ARCHITECTURE.md line 234 — identical documentation placeholder ────
+#
+# Same content, same commit, different doc file. Same justification as #1.
+68e14bae514a154b929f464b94a36d1c45f9de23:ARCHITECTURE.md:generic-api-key:234
+
+# ─── 3. docs/RELEASE-CANDIDATE-FINAL.md line 133 (commit d8db37e) ─────────
+#
+# When the RC-final report was first written it quoted the placeholder
+# from entries #1/#2 verbatim to explain what gitleaks had flagged. The
+# quote itself then re-tripped gitleaks. The file was immediately edited
+# to paraphrase the snippet rather than reproduce it, but the old blob
+# is preserved in commit d8db37e. Same justification as #1/#2 — a
+# quoted documentation snippet with the token body replaced by trailing
+# dots, no secret material.
+d8db37ee85df65673321c5ec55456145df63f143:docs/RELEASE-CANDIDATE-FINAL.md:generic-api-key:133

@@ -1,0 +1,42 @@
+[
+ {
+  "RuleID": "generic-api-key",
+  "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+  "StartLine": 51,
+  "EndLine": 51,
+  "StartColumn": 5,
+  "EndColumn": 44,
+  "Match": "access_token\": \"eyJhbGciOiJIUzI1NiIs...\"",
+  "Secret": "eyJhbGciOiJIUzI1NiIs...",
+  "File": "QUICK_START.md",
+  "SymlinkFile": "",
+  "Commit": "68e14bae514a154b929f464b94a36d1c45f9de23",
+  "Entropy": 3.8164027,
+  "Author": "Ayaad M. Abood",
+  "Email": "ayaad.m.abood@uobasrah.edu.iq",
+  "Date": "2026-04-16T21:38:01Z",
+  "Message": "Initial commit â€“ production-ready version",
+  "Tags": [],
+  "Fingerprint": "68e14bae514a154b929f464b94a36d1c45f9de23:QUICK_START.md:generic-api-key:51"
+ },
+ {
+  "RuleID": "generic-api-key",
+  "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+  "StartLine": 234,
+  "EndLine": 234,
+  "StartColumn": 5,
+  "EndColumn": 44,
+  "Match": "access_token\": \"eyJhbGciOiJIUzI1NiIs...\"",
+  "Secret": "eyJhbGciOiJIUzI1NiIs...",
+  "File": "ARCHITECTURE.md",
+  "SymlinkFile": "",
+  "Commit": "68e14bae514a154b929f464b94a36d1c45f9de23",
+  "Entropy": 3.8164027,
+  "Author": "Ayaad M. Abood",
+  "Email": "ayaad.m.abood@uobasrah.edu.iq",
+  "Date": "2026-04-16T21:38:01Z",
+  "Message": "Initial commit â€“ production-ready version",
+  "Tags": [],
+  "Fingerprint": "68e14bae514a154b929f464b94a36d1c45f9de23:ARCHITECTURE.md:generic-api-key:234"
+ }
+]

@@ -129,15 +129,16 @@ any critical, or on any expired high entry.
 
 `gitleaks git --no-banner --verbose` over the full history:
 
-- 9 commits scanned, 1.21 MB.
-- 2 "findings", both identical: the literal string `"access_token":
-  "eyJhbGciOiJIUzI1NiIs..."` (a documentation example — three trailing
-  dots — of a JWT response). `eyJhbGciOiJIUzI1NiIs` base64-decodes to
-  `{"alg":"HS256","` which is the public JWT header prefix, no secret
-  material. Files were deleted by the scaffolding-reset commit and are
-  not in the current tree.
-- **Verdict**: zero real secrets in history. Full report at
-  `scratchpad/gitleaks-report.json`.
+- 10 commits scanned, 1.22 MB.
+- Two "findings" were flagged in the initial scan, both identical: a
+  quoted documentation snippet showing a JWT response where the token
+  body was replaced by three trailing dots. The visible prefix
+  base64-decodes to a public JWT header — no secret material — and the
+  files were deleted from the tree by the scaffolding-reset commit.
+  Both are recorded in `.gitleaksignore` with reason lines.
+- **Rescan verdict**: `gitleaks git --gitleaks-ignore-path=.gitleaksignore`
+  returns 0 findings. Baseline is committed; a future reviewer must
+  re-verify each entry before renewing.
 
 ### 6.3 Remote tree audit
 

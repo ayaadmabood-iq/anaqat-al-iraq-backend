@@ -97,3 +97,8 @@ Desktop.ini
 *.tmp
 *.orig
 .cache/
+
+# Release tarballs live under scratchpad/release-artifacts and are attached
+# to the GitHub Release directly; SHA256SUMS.txt (checked in below) pins
+# their hashes for tamper-evident verification.
+release-artifacts/*.tar.gz

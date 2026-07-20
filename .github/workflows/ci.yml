@@ -5,6 +5,10 @@ on:
     branches: ['main', 'claude/**']
   pull_request:
     branches: ['main']
+  # workflow_dispatch lets a maintainer (or the release-gate automation)
+  # start a fresh, independent Run against the same commit — used to prove
+  # stability on a release-candidate commit without needing a code change.
+  workflow_dispatch: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
