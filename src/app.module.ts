@@ -8,7 +8,6 @@ import {
   seconds,
 } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
-import Redis from 'ioredis';
 import { getDatabaseConfig } from '@/config/database.config';
 import { ALL_ENTITIES } from '@/database';
 import { AuditModule } from '@/modules/audit/audit.module';
@@ -43,20 +42,34 @@ import { ContentModule } from '@/modules/content/content.module';
           { name: 'upload', ttl: seconds(60), limit: 10 },
         ];
         const redisUrl = process.env.REDIS_URL;
-        if (redisUrl) {
-          const redis = new Redis(redisUrl, {
-            enableOfflineQueue: false,
-            maxRetriesPerRequest: 2,
-          });
+        // Tests deliberately bypass the Redis-backed storage:
+        //   1) each `bootTestApp()` gets a fresh in-memory counter, so the
+        //      "auth" throttler (limit=20/min) does not overflow between
+        //      spec files and 429 every login after the first one;
+        //   2) no ioredis handle is opened, so `app.close()` in `afterAll`
+        //      lets Jest exit cleanly instead of hanging until GitHub's
+        //      6-hour job timeout cancels the run.
+        const useRedis = !!redisUrl && process.env.NODE_ENV !== 'test';
+        if (useRedis) {
+          // Pass the URL (not a pre-built Redis instance). The storage
+          // then owns the connection and disposes it in its own
+          // onModuleDestroy — the alternative code path (pre-built
+          // instance) sets `disconnectRequired = false`, so the client
+          // would leak on app.close().
           return {
             throttlers,
-            storage: new ThrottlerStorageRedisService(redis),
+            storage: new ThrottlerStorageRedisService(redisUrl, {
+              enableOfflineQueue: false,
+              maxRetriesPerRequest: 2,
+            }),
           };
         }
-        // eslint-disable-next-line no-console
-        console.warn(
-          '[throttler] REDIS_URL not set — using in-memory storage. NOT suitable for multi-node deployments.',
-        );
+        if (!redisUrl && process.env.NODE_ENV !== 'test') {
+          // eslint-disable-next-line no-console
+          console.warn(
+            '[throttler] REDIS_URL not set — using in-memory storage. NOT suitable for multi-node deployments.',
+          );
+        }
         return { throttlers };
       },
     }),

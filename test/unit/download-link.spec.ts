@@ -82,7 +82,13 @@ describe('DownloadLinkService', () => {
       const svc = build();
       const link = await svc.issue('order-1', 'user-1');
       const [body, sig] = link.token.split('.');
-      const bad = `${body}.${sig.slice(0, -1)}A`;
+      // Tamper the FIRST sig char, not the last: an HMAC-SHA256 signature
+      // encodes to 43 base64url chars, where the LAST char carries only 4
+      // data bits + 2 base64 padding bits — so 4 different last-chars all
+      // decode to the same signature bytes and the "tamper" is a no-op.
+      // Middle/first chars use all 6 bits, so any flip is a real change.
+      const flipped = sig[0] === 'A' ? 'B' : 'A';
+      const bad = `${body}.${flipped}${sig.slice(1)}`;
       await expect(svc.consume(bad, '1.1.1.1')).rejects.toBeInstanceOf(BadRequestException);
     });
   });

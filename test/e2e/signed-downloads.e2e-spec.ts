@@ -99,7 +99,13 @@ describe('signed short-TTL download URLs (E2E)', () => {
       .post(`/api/v1/downloads/order/${orderId}/link`)
       .set('Authorization', `Bearer ${buyerToken}`)
       .expect(201);
-    const bad = link.body.token.replace(/.$/, 'A');
+    // Tamper the FIRST char of the signature (after the `.` separator).
+    // The last char of the base64url signature carries only 4 data bits
+    // + 2 padding bits, so 4 aliased chars decode to identical signature
+    // bytes — last-char flip was flaky. The first char uses all 6 bits.
+    const [body, sig] = link.body.token.split('.');
+    const flippedFirst = sig[0] === 'A' ? 'B' : 'A';
+    const bad = `${body}.${flippedFirst}${sig.slice(1)}`;
     await http.get(`/api/v1/downloads/signed?t=${encodeURIComponent(bad)}`).expect(400);
   });
 
